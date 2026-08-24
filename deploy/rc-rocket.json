@@ -1,0 +1,11 @@
+{
+  "name": "RC Rocket",
+  "slug": "rc-rocket",
+  "version": "0.6.0",
+  "download_url": "https://updates.youragency.com/rc-rocket/rc-rocket-0.6.0.zip",
+  "requires": "6.5",
+  "requires_php": "8.1",
+  "tested": "6.8",
+  "homepage": "https://youragency.com/rc-rocket",
+  "changelog": "0.6.0 — Self-hosted updates. Define RC_ROCKET_UPDATE_URL in wp-config.php and every site sees new releases in Dashboard > Updates."
+}

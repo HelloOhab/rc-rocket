@@ -1,0 +1,71 @@
+name: Release
+
+# Tag a version and this builds it, tests it, and publishes the zip as a
+# release asset. Attaching a real asset matters: GitHub's generated source
+# archive unpacks to a folder named repo-tag rather than rc-rocket, which
+# would install a second, deactivated copy of the plugin beside the first.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check the tag matches the plugin header
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          HEADER=$(grep -oP '(?<=Version:           )[0-9.]+' rc-rocket.php)
+          if [ "$TAG" != "$HEADER" ]; then
+            echo "Tag $TAG does not match rc-rocket.php ($HEADER)." >&2
+            exit 1
+          fi
+          echo "VERSION=$TAG" >> "$GITHUB_ENV"
+
+      - name: Lint every PHP file
+        run: |
+          find . -name '*.php' -not -path './node_modules/*' -print0 \
+            | xargs -0 -n1 php -l > /dev/null
+
+      - name: Run the test suites
+        run: |
+          for f in tests/run*.php; do
+            echo "--- $f"
+            php "$f" | tail -1
+          done
+
+      - name: Build the admin app
+        run: |
+          npm install
+          npm run build
+
+      - name: Package
+        run: |
+          mkdir -p dist/rc-rocket
+          rsync -a --exclude node_modules --exclude dist --exclude .git \
+            --exclude .github --exclude package-lock.json ./ dist/rc-rocket/
+          cd dist && zip -rq "rc-rocket-${VERSION}.zip" rc-rocket && rm -rf rc-rocket
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/rc-rocket-${{ env.VERSION }}.zip
+          generate_release_notes: true

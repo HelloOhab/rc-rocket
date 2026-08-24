@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.6.0
+Stable tag: 0.6.1
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -61,6 +61,12 @@ Divi are locked unless you force them.
   original markup is served.
 
 == Changelog ==
+
+= 0.6.1 =
+* GitHub Actions release workflow. Tagging a version lints every file, runs all
+  nine test suites, builds the admin app and attaches the zip to the release.
+  A failing test publishes nothing.
+
 
 = 0.6.0 =
 * Self-hosted updates. Point every site at one JSON manifest or a GitHub
