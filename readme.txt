@@ -2,9 +2,9 @@
 Contributors: abdul
 Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
-Tested up to: 6.8
+Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.6.2
+Stable tag: 0.6.3
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -61,6 +61,14 @@ Divi are locked unless you force them.
   original markup is served.
 
 == Changelog ==
+
+= 0.6.3 =
+* Tested up to WordPress 7.1.
+
+= 0.6.2 =
+* Plugin URI updated to https://rhythmco.com/.
+* The self-hosted update manifest can now supply its own description for the
+  Plugin Details modal, instead of a hardcoded one-liner.
 
 = 0.6.1 =
 * GitHub Actions release workflow. Tagging a version lints every file, runs all

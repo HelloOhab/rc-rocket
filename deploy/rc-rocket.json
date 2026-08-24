@@ -1,11 +1,12 @@
 {
   "name": "RC Rocket",
   "slug": "rc-rocket",
-  "version": "0.6.0",
-  "download_url": "https://updates.youragency.com/rc-rocket/rc-rocket-0.6.0.zip",
+  "version": "0.6.3",
+  "download_url": "https://updates.youragency.com/rc-rocket/rc-rocket-0.6.3.zip",
   "requires": "6.5",
   "requires_php": "8.1",
-  "tested": "6.8",
-  "homepage": "https://youragency.com/rc-rocket",
-  "changelog": "0.6.0 — Self-hosted updates. Define RC_ROCKET_UPDATE_URL in wp-config.php and every site sees new releases in Dashboard > Updates."
+  "tested": "7.1",
+  "homepage": "https://rhythmco.com/",
+  "description": "Performance tuning built around Divi. Asset control, media delivery, JavaScript timing and a safety net that switches itself off when something breaks.",
+  "changelog": "0.6.3 — Tested up to WordPress 7.1.\n0.6.2 — Plugin URI updated to rhythmco.com. The update manifest can now supply its own description for the Plugin Details modal instead of a hardcoded one.\n0.6.1 — GitHub Actions release workflow. Tagging a version lints every file, runs all nine test suites, builds the admin app and attaches the zip to the release.\n0.6.0 — Self-hosted updates. Define RC_ROCKET_UPDATE_URL in wp-config.php and every site sees new releases in Dashboard > Updates."
 }

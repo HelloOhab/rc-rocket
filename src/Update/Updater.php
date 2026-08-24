@@ -99,7 +99,7 @@ final class Updater {
 	// ------------------------------------------------------------- the check
 
 	/**
-	 * @return array{version:string, package:string, requires:string, requires_php:string, tested:string, changelog:string, url:string}|null
+	 * @return array{version:string, package:string, requires:string, requires_php:string, tested:string, changelog:string, url:string, description:string}|null
 	 */
 	public function remote( bool $force = false ): ?array {
 		if ( ! $force ) {
@@ -152,6 +152,7 @@ final class Updater {
 			'tested'       => (string) ( $data['tested'] ?? '' ),
 			'changelog'    => (string) ( $data['changelog'] ?? '' ),
 			'url'          => (string) ( $data['homepage'] ?? '' ),
+			'description'  => (string) ( $data['description'] ?? '' ),
 		];
 	}
 
@@ -195,6 +196,7 @@ final class Updater {
 			'tested'       => '',
 			'changelog'    => (string) ( $release['body'] ?? '' ),
 			'url'          => (string) ( $release['html_url'] ?? '' ),
+			'description'  => '',
 		];
 	}
 
@@ -286,7 +288,9 @@ final class Updater {
 			'tested'        => $release['tested'],
 			'download_link' => $release['package'],
 			'sections'      => [
-				'description' => __( 'Performance tuning built around Divi.', 'rc-rocket' ),
+				'description' => '' !== $release['description']
+					? wpautop( esc_html( $release['description'] ) )
+					: __( 'Performance tuning built around Divi. Asset control, media delivery, JavaScript timing and a safety net that switches itself off when something breaks.', 'rc-rocket' ),
 				'changelog'   => wpautop( esc_html( $release['changelog'] ) ),
 			],
 		];
