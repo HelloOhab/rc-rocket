@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 6.8
 Requires PHP: 8.1
-Stable tag: 0.6.1
+Stable tag: 0.6.2
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
