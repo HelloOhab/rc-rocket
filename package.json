@@ -1,0 +1,13 @@
+{
+  "name": "rcrocket",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Admin interface for the RC Rocket WordPress plugin.",
+  "scripts": {
+    "build": "esbuild admin-src/index.jsx --bundle --minify --format=iife --jsx-factory=wp.element.createElement --jsx-fragment=wp.element.Fragment --resolve-extensions=.jsx,.js --target=es2019 --outfile=assets/admin/app.js && cp admin-src/style.css assets/admin/app.css",
+    "dev": "esbuild admin-src/index.jsx --bundle --watch --sourcemap --format=iife --jsx-factory=wp.element.createElement --jsx-fragment=wp.element.Fragment --resolve-extensions=.jsx,.js --outfile=assets/admin/app.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  }
+}
