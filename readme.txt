@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.6.3
+Stable tag: 0.6.4
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -61,6 +61,11 @@ Divi are locked unless you force them.
   original markup is served.
 
 == Changelog ==
+
+= 0.6.4 =
+* Fixed the Plugin Details modal showing a blank description or a stale
+  version number when the cached update-check result predates a plugin
+  update (defensive check against a missing/legacy cache shape).
 
 = 0.6.3 =
 * Tested up to WordPress 7.1.

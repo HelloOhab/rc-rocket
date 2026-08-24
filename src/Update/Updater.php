@@ -288,10 +288,10 @@ final class Updater {
 			'tested'        => $release['tested'],
 			'download_link' => $release['package'],
 			'sections'      => [
-				'description' => '' !== $release['description']
+				'description' => ! empty( $release['description'] )
 					? wpautop( esc_html( $release['description'] ) )
 					: __( 'Performance tuning built around Divi. Asset control, media delivery, JavaScript timing and a safety net that switches itself off when something breaks.', 'rc-rocket' ),
-				'changelog'   => wpautop( esc_html( $release['changelog'] ) ),
+				'changelog'   => wpautop( esc_html( $release['changelog'] ?? '' ) ),
 			],
 		];
 	}
