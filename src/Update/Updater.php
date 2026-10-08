@@ -34,6 +34,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  *   define( 'RC_ROCKET_UPDATE_GITHUB', 'youragency/rc-rocket' );
  *   define( 'RC_ROCKET_UPDATE_TOKEN', 'ghp_...' );   // private repos only
+ *   define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );     // test sites only
+ *
+ * The beta channel also offers GitHub pre-releases, so a release can reach
+ * a few test sites first. Every other site only sees full releases.
  *
  * With neither defined the updater stays completely dormant.
  */
@@ -170,16 +174,17 @@ final class Updater {
 		];
 	}
 
+	public function channel(): string {
+		$channel = defined( 'RC_ROCKET_UPDATE_CHANNEL' ) ? (string) RC_ROCKET_UPDATE_CHANNEL : 'stable';
+
+		/** @param string $channel "stable" or "beta". */
+		return 'beta' === apply_filters( 'rc-rocket/update/channel', $channel ) ? 'beta' : 'stable';
+	}
+
 	private function from_github(): ?array {
-		$body = $this->fetch( sprintf( 'https://api.github.com/repos/%s/releases/latest', $this->repository() ) );
+		$release = 'beta' === $this->channel() ? $this->newest_release() : $this->latest_release();
 
-		if ( null === $body ) {
-			return null;
-		}
-
-		$release = json_decode( $body, true );
-
-		if ( ! is_array( $release ) || empty( $release['tag_name'] ) ) {
+		if ( null === $release ) {
 			return null;
 		}
 
@@ -212,6 +217,38 @@ final class Updater {
 			'url'          => (string) ( $release['html_url'] ?? '' ),
 			'description'  => '',
 		];
+	}
+
+	/** GitHub's "latest": the newest full release, never a pre-release. */
+	private function latest_release(): ?array {
+		$body = $this->fetch( sprintf( 'https://api.github.com/repos/%s/releases/latest', $this->repository() ) );
+		$data = null === $body ? null : json_decode( $body, true );
+
+		return is_array( $data ) && ! empty( $data['tag_name'] ) ? $data : null;
+	}
+
+	/** The highest version among recent releases, pre-releases included. */
+	public function newest_release( ?string $body = null ): ?array {
+		$body ??= $this->fetch( sprintf( 'https://api.github.com/repos/%s/releases?per_page=20', $this->repository() ) );
+		$list = null === $body ? null : json_decode( $body, true );
+
+		if ( ! is_array( $list ) ) {
+			return null;
+		}
+
+		$best = null;
+
+		foreach ( $list as $release ) {
+			if ( ! is_array( $release ) || ! empty( $release['draft'] ) || empty( $release['tag_name'] ) ) {
+				continue;
+			}
+
+			if ( null === $best || version_compare( ltrim( (string) $release['tag_name'], 'v' ), ltrim( (string) $best['tag_name'], 'v' ), '>' ) ) {
+				$best = $release;
+			}
+		}
+
+		return $best;
 	}
 
 	private function fetch( string $url, bool $binary = false ): ?string {
@@ -417,6 +454,7 @@ final class Updater {
 		return [
 			'configured' => $this->configured(),
 			'source'     => '' !== $this->repository() ? 'github:' . $this->repository() : $this->manifest_url(),
+			'channel'    => $this->channel(),
 			'installed'  => $this->version,
 			'available'  => $release['version'] ?? null,
 			'update'     => null !== $release && version_compare( $release['version'], $this->version, '>' ),

@@ -61,4 +61,18 @@ ok( 'update: auto update follows the plugin toggle',
 $other_item = (object) [ 'plugin' => 'other/other.php' ];
 ok( 'update: auto update decision for others is untouched', 'keep' === $u2->allow_auto_update( 'keep', $other_item ) );
 
+// Release channels: stable by default; beta picks the highest version among
+// recent releases, pre-releases included, and never a draft.
+ok( 'update: channel is stable by default', 'stable' === $u2->channel() );
+$releases = json_encode( [
+	[ 'tag_name' => 'v0.13.0', 'draft' => true, 'prerelease' => false ],
+	[ 'tag_name' => 'v0.12.1', 'draft' => false, 'prerelease' => true ],
+	[ 'tag_name' => 'v0.12.0', 'draft' => false, 'prerelease' => false ],
+	[ 'tag_name' => 'v0.9.0', 'draft' => false, 'prerelease' => false ],
+] );
+ok( 'update: beta takes the newest pre-release and skips drafts', 'v0.12.1' === ( $u2->newest_release( $releases )['tag_name'] ?? '' ) );
+ok( 'update: beta survives a malformed list', null === $u2->newest_release( '{"message":"Not Found"}' ) );
+define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );
+ok( 'update: channel follows the constant', 'beta' === $u2->channel() );
+
 report();
