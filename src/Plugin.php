@@ -197,6 +197,7 @@ final class Plugin {
 		// value, so sites move to the new default; the toggle remains.
 		if ( $version < 9 && $version >= 1 ) {
 			$settings->set( 'assets.fonts.preload', false );
+			delete_option( 'rcrocket_image_dimensions' );
 		}
 
 		$settings->remove( 'general.auto_safe_mode_until' );

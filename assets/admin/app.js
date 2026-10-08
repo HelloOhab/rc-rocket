@@ -1076,7 +1076,7 @@
         { title: "Layout stability", initialOpen: !0 },
         wp.element.createElement(_, {
           label: "Add missing width and height",
-          help: "Reserves space so the page does not jump as images arrive. This is the Cumulative Layout Shift fix.",
+          help: "Like WP Rocket's \"Add missing image dimensions\": reads each uploaded image's real size and adds it, so the browser keeps space free and the page does not jump as images arrive. Also applies to logos and images excluded from lazy loading.",
           checked: !!a.add_dimensions,
           onChange: i("add_dimensions"),
         }),

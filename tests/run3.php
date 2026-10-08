@@ -71,6 +71,14 @@ $broken = '<body><img src="a.jpg" <img src="b.jpg"></body>';
 $safe_out = $reflect->invoke( $media, $broken, $c );
 ok( 'media: malformed markup survives', strlen( $safe_out ) >= strlen( $broken ) - 5 );
 
+// On an HTTPS site the site's own http:// image addresses become https://;
+// other hosts are left alone.
+$sec = MediaModule::secure_own_urls( ' src="http://example.com/wp-content/uploads/logo.png" srcset="http://example.com/a.png 1x, http://cdn.other.com/b.png 2x"' );
+ok( 'media: own http image becomes https', str_contains( $sec, 'src="https://example.com/wp-content/uploads/logo.png"' ) );
+ok( 'media: own http srcset entry becomes https', str_contains( $sec, 'https://example.com/a.png 1x' ) );
+ok( 'media: another host is left alone', str_contains( $sec, 'http://cdn.other.com/b.png' ) );
+ok( 'media: a lookalike host is left alone', str_contains( MediaModule::secure_own_urls( ' src="http://example.com.evil.net/x.png"' ), 'http://example.com.evil.net' ) );
+
 // ==================== 12. Script delay ====================
 
 $settings->merge( [ 'js' => [ 'delay' => true, 'exclusions' => RCRocket\Assets\Presets::js_exclusions() ] ] );

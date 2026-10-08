@@ -133,6 +133,13 @@ From testing on a Divi 4 and a Divi 5 site on Kinsta.
   for Tag Manager, 1.5 s with reCAPTCHA. Visitors who leave within the
   delay timeout without touching the page are not counted in Analytics.
   The reCAPTCHA v2 checkbox is left alone.
+* Fixed: "Add missing width and height" skipped images linked with
+  http:// on an HTTPS site (a logo chosen before the move to HTTPS is the
+  usual case) and every image matching a lazy-load exclusion, which by
+  default includes Divi's menu logo. Both now get their size. The site's
+  own http:// image addresses are also rewritten to https:// on HTTPS
+  pages, which clears Lighthouse's "uses HTTPS" failure. The size cache is
+  rebuilt once.
 * Switching Safe mode on or off no longer changes the optimization level
   to Custom.
 * New: "Don't let tracking cookies block caching" (Cache tab, on by
