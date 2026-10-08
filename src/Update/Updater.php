@@ -301,6 +301,23 @@ final class Updater {
 
 	// ------------------------------------------------------- WordPress glue
 
+	/**
+	 * Dashboard > Updates > "Check again" also asks for a fresh answer
+	 * here, instead of one remembered for up to six hours. Once per request:
+	 * WordPress runs this filter more than once while saving.
+	 */
+	private function forced_check(): bool {
+		static $done = false;
+
+		if ( $done || ! is_admin() || empty( $_GET['force-check'] ) || ! current_user_can( 'update_plugins' ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return false;
+		}
+
+		$done = true;
+
+		return true;
+	}
+
 	public function inject( mixed $transient ): mixed {
 		if ( ! is_object( $transient ) ) {
 			return $transient;
@@ -314,7 +331,7 @@ final class Updater {
 			unset( $transient->response[ $this->basename() ] );
 		}
 
-		$release = $this->remote();
+		$release = $this->remote( $this->forced_check() );
 
 		if ( null === $release ) {
 			return $transient;
