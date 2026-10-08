@@ -94,7 +94,8 @@ final class Hosting {
 			[
 				'id'    => 'rocketnet',
 				'label' => 'Rocket.net',
-				'test'  => static fn(): bool => defined( 'ROCKET_CDN_URL' ) || ! empty( $_SERVER['HTTP_X_ROCKET_CDN'] ),
+				// Constants only: a request header is something any visitor can send.
+				'test'  => static fn(): bool => defined( 'ROCKET_CDN_URL' ),
 				'page_cache'   => true,
 				'object_cache' => true,
 				'editable'     => false,
@@ -149,18 +150,15 @@ final class Hosting {
 
 	/**
 	 * Rate limit: even explicit purges should not be able to flush a
-	 * production cache in a loop.
+	 * production cache in a loop. Callers that are refused defer rather than
+	 * drop, so the last change in a burst always lands.
 	 */
 	public function can_purge_now(): bool {
-		$last = (int) get_transient( 'rcrocket_host_purge_at' );
+		return ! get_transient( 'rcrocket_host_purge_at' );
+	}
 
-		if ( $last > 0 ) {
-			return false;
-		}
-
-		set_transient( 'rcrocket_host_purge_at', time(), 60 );
-
-		return true;
+	public function mark_purged(): void {
+		set_transient( 'rcrocket_host_purge_at', time(), MINUTE_IN_SECONDS );
 	}
 
 	/**
@@ -174,18 +172,15 @@ final class Hosting {
 
 		switch ( $id ) {
 			case 'kinsta':
-				global $kinsta_cache;
+				$purger = self::kinsta_purger();
 
-				if ( isset( $kinsta_cache->kinsta_cache_purge ) && method_exists( $kinsta_cache->kinsta_cache_purge, 'purge_complete_caches' ) ) {
-					$kinsta_cache->kinsta_cache_purge->purge_complete_caches();
+				if ( null !== $purger ) {
+					$purger->purge_complete_caches();
 
 					return true;
 				}
 
-				// The MU plugin also listens on its own hook in newer versions.
-				do_action( 'kinsta_cache_purge' );
-
-				return has_action( 'kinsta_cache_purge' ) > 0;
+				return false;
 
 			case 'wpengine':
 				if ( class_exists( '\WpeCommon' ) && method_exists( '\WpeCommon', 'purge_varnish_cache' ) ) {
@@ -229,11 +224,75 @@ final class Hosting {
 		return (bool) apply_filters( 'rc-rocket/host/purge', false, $id );
 	}
 
+	/**
+	 * Forward a purge of one page. Returns false when this host has no way to
+	 * do that, so the caller can decide whether a full purge is worth it.
+	 */
+	public function purge_host_url( string $url ): bool {
+		$url = strtok( $url, '?#' );
+
+		if ( ! is_string( $url ) || '' === $url ) {
+			return false;
+		}
+
+		if ( 'kinsta' === $this->id() ) {
+			// Kinsta's documented single-URL purge, the same one WP Rocket
+			// uses: request the page with kinsta-clear-cache/ appended. The
+			// MU plugin answers it and drops that URL from the edge and the
+			// server cache. Fire and forget, so the admin never waits on it.
+			wp_remote_get(
+				trailingslashit( $url ) . 'kinsta-clear-cache/',
+				[
+					'blocking'  => false,
+					'timeout'   => 0.01,
+					'sslverify' => false,
+				]
+			);
+
+			return true;
+		}
+
+		/**
+		 * Single-URL purge for hosts not covered above.
+		 *
+		 * @param bool   $handled
+		 * @param string $url
+		 * @param string $host_id
+		 */
+		return (bool) apply_filters( 'rc-rocket/host/purge_url', false, $url, $this->id() );
+	}
+
+	/**
+	 * Kinsta's MU plugin has moved its purge object between releases. Find it
+	 * wherever this version keeps it, and only ever call a method that exists.
+	 */
+	public static function kinsta_purger(): ?object {
+		$candidates = [];
+
+		if ( isset( $GLOBALS['kinsta_cache'] ) && is_object( $GLOBALS['kinsta_cache'] ) ) {
+			$candidates[] = $GLOBALS['kinsta_cache']->kinsta_cache_purge ?? null;
+		}
+
+		if ( isset( $GLOBALS['kinsta_muplugin'] ) && is_object( $GLOBALS['kinsta_muplugin'] ) ) {
+			$cache        = $GLOBALS['kinsta_muplugin']->kinsta_cache ?? null;
+			$candidates[] = is_object( $cache ) ? ( $cache->kinsta_cache_purge ?? null ) : null;
+		}
+
+		foreach ( $candidates as $candidate ) {
+			if ( is_object( $candidate ) && method_exists( $candidate, 'purge_complete_caches' ) ) {
+				return $candidate;
+			}
+		}
+
+		return null;
+	}
+
 	public function report(): array {
 		$detected = $this->detect();
 
 		return $detected + [
 			'our_page_cache_disabled' => $detected['page_cache'],
+			'purge_api'               => 'kinsta' !== $detected['id'] || null !== self::kinsta_purger(),
 			'reason'                  => $detected['page_cache']
 				? sprintf(
 					/* translators: %s: host name */

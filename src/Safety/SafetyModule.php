@@ -29,6 +29,7 @@ final class SafetyModule implements Module {
 	public const ERRORS_OPTION   = 'rcrocket_error_log';
 	public const BASELINE_OPTION = 'rcrocket_error_baseline';
 	private const HISTORY_MAX    = 25;
+	private const TRIPPED_TODAY  = 'rcrocket_auto_tripped';
 
 	public function id(): string {
 		return 'safety';
@@ -44,7 +45,8 @@ final class SafetyModule implements Module {
 			'history'          => true,
 			'error_beacon'     => true,
 			'auto_safe_mode'   => true,
-			'error_threshold'  => 4,
+			'error_threshold'  => 3,
+			'min_reporters'    => 2,
 			'ignore_third_party' => true,
 			'notify_admin'     => true,
 		];
@@ -65,11 +67,13 @@ final class SafetyModule implements Module {
 			add_action( 'rc-rocket/settings/before_save', [ $container->get( 'safety.history' ), 'snapshot' ], 10, 2 );
 		}
 
-		add_action( 'rest_api_init', function () use ( $container ): void {
-			$this->register_beacon_route( $container );
-		} );
-
 		if ( $settings->enabled( 'safety.error_beacon' ) ) {
+			// A public endpoint exists only while something on the page posts
+			// to it. Switching the beacon off has to close the door as well.
+			add_action( 'rest_api_init', function () use ( $container ): void {
+				$this->register_beacon_route( $container );
+			} );
+
 			add_filter(
 				'rc-rocket/html',
 				function ( string $html ) use ( $container ): string {
@@ -91,11 +95,19 @@ final class SafetyModule implements Module {
 		$context  = $container->get( 'context' );
 		$endpoint = esc_url_raw( rest_url( 'rc-rocket/v1/beacon' ) );
 		$sig      = esc_js( $context->signature() );
+		$token    = self::token();
 
 		$script = <<<HTML
 <script id="rcr-beacon">
 (function () {
   var sent = 0;
+  // What jQuery was when the error happened: a version, a stand-in that
+  // only queues ready handlers (a deferred jQuery not arrived yet), or none.
+  function jq() {
+    var j = window.jQuery;
+    if (!j) return 'none';
+    return j.fn && j.fn.jquery ? String(j.fn.jquery).slice(0, 12) : 'stand-in';
+  }
   function report(kind, message, source) {
     if (sent >= 3) return;            // Never flood our own endpoint.
     sent++;
@@ -105,7 +117,10 @@ final class SafetyModule implements Module {
         message: String(message).slice(0, 300),
         source: String(source || '').slice(0, 300),
         signature: '{$sig}',
-        page: location.pathname.slice(0, 200)
+        token: '{$token}',
+        page: location.pathname.slice(0, 200),
+        jquery: jq(),
+        delayed: document.querySelectorAll('script[type="rcrocket/delayed"]').length
       });
       if (navigator.sendBeacon) navigator.sendBeacon('{$endpoint}', new Blob([body], { type: 'application/json' }));
       else fetch('{$endpoint}', { method: 'POST', body: body, headers: { 'Content-Type': 'application/json' }, keepalive: true });
@@ -125,7 +140,10 @@ final class SafetyModule implements Module {
 </script>
 HTML;
 
-		return HtmlPipeline::before_body_end( $html, $script );
+		// First thing in <head>: an error thrown while the page is still
+		// loading (the "jQuery(...).on is not a function" kind) happens
+		// before anything placed at the end of the page is listening.
+		return HtmlPipeline::after_head_start( $html, $script );
 	}
 
 	private function register_beacon_route( Container $container ): void {
@@ -146,27 +164,46 @@ HTML;
 		/** @var Settings $settings */
 		$settings = $container->get( 'settings' );
 
-		$payload = (array) $request->get_json_params();
+		// The page sends a few hundred bytes. Anything far larger is not ours.
+		if ( strlen( (string) $request->get_body() ) > 4096 ) {
+			return $this->beacon_response();
+		}
 
+		$payload  = (array) $request->get_json_params();
+		$reporter = self::reporter_id();
+
+		// The endpoint is public by necessity — visitors report the errors —
+		// so nothing it receives is trusted. A report must carry the token the
+		// page was rendered with, each visitor gets a small budget, and no
+		// single visitor can ever be the whole case for switching off.
+		if ( ! self::token_valid( (string) ( $payload['token'] ?? '' ) ) || ! self::within_budget( $reporter ) ) {
+			return $this->beacon_response();
+		}
+
+		// The page truncates these too; the server cannot rely on it.
 		$entry = [
-			'kind'      => sanitize_text_field( (string) ( $payload['kind'] ?? 'js' ) ),
-			'message'   => sanitize_text_field( (string) ( $payload['message'] ?? '' ) ),
-			'source'    => esc_url_raw( (string) ( $payload['source'] ?? '' ) ),
-			'signature' => sanitize_text_field( (string) ( $payload['signature'] ?? 'unknown' ) ),
-			'page'      => sanitize_text_field( (string) ( $payload['page'] ?? '' ) ),
+			'kind'      => mb_substr( sanitize_text_field( (string) ( $payload['kind'] ?? 'js' ) ), 0, 20 ),
+			'message'   => mb_substr( sanitize_text_field( (string) ( $payload['message'] ?? '' ) ), 0, 300 ),
+			'source'    => mb_substr( esc_url_raw( (string) ( $payload['source'] ?? '' ) ), 0, 300 ),
+			'signature' => mb_substr( sanitize_text_field( (string) ( $payload['signature'] ?? 'unknown' ) ), 0, 100 ),
+			'page'      => mb_substr( sanitize_text_field( (string) ( $payload['page'] ?? '' ) ), 0, 200 ),
+			'jquery'    => substr( sanitize_text_field( (string) ( $payload['jquery'] ?? '' ) ), 0, 12 ),
+			'delayed'   => max( 0, min( 999, (int) ( $payload['delayed'] ?? 0 ) ) ),
+			'reporter'  => $reporter,
 			'time'      => time(),
 		];
 
 		$entry['fingerprint'] = self::fingerprint( $entry );
+
+		/** @var SafeMode $safe */
+		$safe = $container->get( 'safe_mode' );
 
 		// A site with no optimizations running cannot be broken by them. Every
 		// error seen in that state is how the site already behaves, so it is
 		// recorded as baseline and never counts as evidence later. Without
 		// this, any site that already logs a console error — which is most of
 		// them — would disarm the plugin the moment it was installed.
-		/** @var SafeMode $safe */
-		$safe = $container->get( 'safe_mode' );
-
+		//
 		// While safe mode is on, no optimization is reaching anyone, so every
 		// error arriving is by definition how the site behaves on its own.
 		// Recording these as baseline is what lets the plugin learn its way out
@@ -176,16 +213,20 @@ HTML;
 		$baseline = (array) get_option( self::BASELINE_OPTION, [] );
 
 		if ( ! $armed ) {
+			$known     = (array) ( $baseline[ $entry['fingerprint'] ] ?? [] );
+			$reporters = array_slice( array_values( array_unique( array_merge( (array) ( $known['reporters'] ?? [] ), [ $reporter ] ) ) ), -5 );
+
 			$baseline[ $entry['fingerprint'] ] = [
-				'message' => $entry['message'],
-				'source'  => $entry['source'],
-				'seen'    => time(),
+				'message'   => $entry['message'],
+				'source'    => $entry['source'],
+				'seen'      => time(),
+				'reporters' => $reporters,
 			];
 
 			update_option( self::BASELINE_OPTION, array_slice( $baseline, -80, null, true ), false );
 		}
 
-		$entry['baseline'] = isset( $baseline[ $entry['fingerprint'] ] );
+		$entry['baseline'] = self::is_baseline( $baseline, $entry['fingerprint'] );
 
 		$log = (array) get_option( self::ERRORS_OPTION, [] );
 		array_unshift( $log, $entry );
@@ -196,9 +237,12 @@ HTML;
 		}
 
 		// Count distinct new problems, not repeats of one. A single broken
-		// script viewed by twenty people is one problem, not twenty.
-		$window = time() - ( 15 * MINUTE_IN_SECONDS );
-		$novel  = [];
+		// script viewed by twenty people is one problem, not twenty. And a
+		// problem only counts once more than one visitor has seen it: a real
+		// regression reproduces for everyone, a forged report does not.
+		$window        = time() - ( 15 * MINUTE_IN_SECONDS );
+		$min_reporters = max( 1, (int) $settings->get( 'safety.min_reporters', 2 ) );
+		$novel         = [];
 
 		foreach ( $log as $line ) {
 			if ( (int) ( $line['time'] ?? 0 ) <= $window || ! empty( $line['baseline'] ) ) {
@@ -206,6 +250,12 @@ HTML;
 			}
 
 			if ( ! self::attributable( (array) $line ) ) {
+				continue;
+			}
+
+			// No source, no evidence: nothing ties the error to a script we
+			// touched, and it is the cheapest report to forge.
+			if ( '' === (string) ( $line['source'] ?? '' ) ) {
 				continue;
 			}
 
@@ -222,24 +272,105 @@ HTML;
 				}
 			}
 
-			$novel[ (string) ( $line['fingerprint'] ?? '' ) ] = true;
+			$novel[ (string) ( $line['fingerprint'] ?? '' ) ][ (string) ( $line['reporter'] ?? '' ) ] = true;
 		}
 
-		$threshold = max( 2, (int) $settings->get( 'safety.error_threshold', 4 ) );
+		$confirmed = count( array_filter( $novel, static fn( array $reporters ): bool => count( $reporters ) >= $min_reporters ) );
+		$threshold = max( 1, (int) $settings->get( 'safety.error_threshold', 3 ) );
 
-		if ( count( $novel ) >= $threshold && ! $safe->is_active() ) {
-				if ( ! $safe->trip( sprintf( '%d new JavaScript errors in 15 minutes', count( $novel ) ), 120 ) ) {
+		if ( $confirmed >= $threshold && ! $safe->is_active() ) {
+			// Once a day at most. Reports can be forged, and a switch that can
+			// be flipped again the moment it resets is an outage on repeat.
+			// The first trip makes the point; after that, a person decides.
+			if ( get_transient( self::TRIPPED_TODAY ) ) {
 				return $this->beacon_response();
 			}
 
-			if ( $settings->enabled( 'safety.notify_admin' ) ) {
-				$this->notify( $entry, count( $novel ) );
+			if ( ! $safe->trip( sprintf( '%d new JavaScript errors in 15 minutes', $confirmed ), 120 ) ) {
+				return $this->beacon_response();
 			}
 
-			$container->get( 'logger' )->error( 'Auto safe mode engaged', [ 'new_errors' => count( $novel ) ] );
+			set_transient( self::TRIPPED_TODAY, time(), DAY_IN_SECONDS );
+
+			if ( $settings->enabled( 'safety.notify_admin' ) ) {
+				$this->notify( $entry, $confirmed );
+			}
+
+			$container->get( 'logger' )->error( 'Auto safe mode engaged', [ 'new_errors' => $confirmed ] );
 		}
 
 		return $this->beacon_response();
+	}
+
+	/**
+	 * A fingerprint is baseline once more than one visitor has reported it
+	 * while nothing risky was running. One report is not enough: otherwise a
+	 * single forged request could pre-excuse a real future failure.
+	 */
+	public static function is_baseline( array $baseline, string $fingerprint ): bool {
+		if ( ! isset( $baseline[ $fingerprint ] ) ) {
+			return false;
+		}
+
+		$reporters = $baseline[ $fingerprint ]['reporters'] ?? null;
+
+		// Entries written before reporters were tracked were trusted then.
+		return null === $reporters || count( (array) $reporters ) >= 2;
+	}
+
+	/**
+	 * A visitor, coarsely: the address, or its /64 for IPv6 where one
+	 * subscriber holds billions. Hashed, never stored raw.
+	 */
+	public static function reporter_id(): string {
+		$ip = (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ); // phpcs:ignore
+
+		if ( str_contains( $ip, ':' ) ) {
+			$packed = @inet_pton( $ip ); // phpcs:ignore
+			$ip     = false === $packed ? $ip : bin2hex( substr( $packed, 0, 8 ) );
+		}
+
+		return substr( hash_hmac( 'sha256', $ip, wp_salt( 'nonce' ) ), 0, 12 );
+	}
+
+	/** Ten reports per visitor per ten minutes, then silence. */
+	private static function within_budget( string $reporter ): bool {
+		$key   = 'rcr_beacon_' . $reporter;
+		$count = (int) get_transient( $key );
+
+		if ( $count >= 10 ) {
+			return false;
+		}
+
+		set_transient( $key, $count + 1, 10 * MINUTE_IN_SECONDS );
+
+		return true;
+	}
+
+	/**
+	 * A daily token baked into the page. It proves the report came from a
+	 * page this site rendered recently, which rules out blind scripted
+	 * reports; the per-visitor rules above deal with everything else.
+	 */
+	public static function token( int $days_ago = 0 ): string {
+		$day = gmdate( 'Ymd', time() - ( $days_ago * DAY_IN_SECONDS ) );
+
+		return substr( hash_hmac( 'sha256', 'rcr-beacon|' . $day, wp_salt( 'nonce' ) ), 0, 16 );
+	}
+
+	public static function token_valid( string $token ): bool {
+		if ( '' === $token ) {
+			return false;
+		}
+
+		// Cached pages carry the token they were rendered with.
+		for ( $days = 0; $days <= 7; $days++ ) {
+			if ( hash_equals( self::token( $days ), $token ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private function beacon_response(): \WP_REST_Response {

@@ -152,7 +152,10 @@ $auto     = $video->rewrite( DIVI4_VIDEO, RCRocket\Media\Video::defaults() );
 ok( 'divi: poster resolves from Divi with no configuration',
 	str_contains( $auto, 'poster="https://example.com/wp-content/uploads/2026/01/hero-fallback.jpg"' ),
 	'automatic poster did not resolve' );
-ok( 'divi: and gating then applies', str_contains( $auto, 'data-rcr-video' ) );
+// Withholding the video is opt-in; by default it only gains the poster.
+ok( 'divi: gating is off by default', ! str_contains( $auto, 'data-rcr-video' ) );
+$gated = $video->rewrite( DIVI4_VIDEO, [ 'withhold' => true ] + RCRocket\Media\Video::defaults() );
+ok( 'divi: and gating applies when asked for', str_contains( $gated, 'data-rcr-video' ) );
 
 // ==================== 10. Presets ====================
 

@@ -28,7 +28,7 @@ Only add the constants to the other 29 once that works.
 
 The workflow in `.github/workflows/release.yml` refuses to build if the tag
 does not match the plugin header, lints every file, runs all nine test suites,
-builds the admin app, and attaches the zip to the release.
+and attaches the zip to the release.
 
 If any test fails, no release is published. That is the point.
 

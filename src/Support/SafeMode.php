@@ -36,6 +36,8 @@ final class SafeMode {
 	 */
 	public const STATE_OPTION = 'rcrocket_auto_safe_mode';
 
+	public const EXPIRED_HOOK = 'rc-rocket/safe-mode/expired';
+
 	private ?bool $active = null;
 
 	public function __construct( private Settings $settings ) {}
@@ -68,6 +70,12 @@ final class SafeMode {
 			return false;
 		}
 
+		// AMP allows no custom script and one stylesheet; anything we add
+		// fails validation. Only answerable once the query has been parsed.
+		if ( did_action( 'wp' ) && function_exists( 'amp_is_request' ) && amp_is_request() ) {
+			return false;
+		}
+
 		// Never touch the Divi builders.
 		foreach ( [ 'et_fb', 'et_bfb', 'et_pb_preview', 'et_theme_builder_preview', 'vb' ] as $arg ) {
 			if ( isset( $_GET[ $arg ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
@@ -92,7 +100,7 @@ final class SafeMode {
 			return 'wp-config';
 		}
 
-		if ( isset( $_GET['rcr_safe'] ) ) { // phpcs:ignore
+		if ( isset( $_GET['rcr_safe'] ) && '0' !== (string) $_GET['rcr_safe'] ) { // phpcs:ignore
 			return 'url';
 		}
 
@@ -123,16 +131,21 @@ final class SafeMode {
 
 	/** Cancel an automatic rollback and let optimization resume. */
 	public function release(): void {
+		$was_tripped = $this->auto_until() > time();
+
 		delete_option( self::STATE_OPTION );
 
 		$this->active = null;
+
+		if ( $was_tripped ) {
+			do_action( 'rc-rocket/safe-mode/changed', false, 'released' );
+		}
 	}
 
 	/**
 	 * Trip the switch automatically. Called by the error beacon when real
 	 * visitors start throwing JavaScript errors that were not there before.
-	 */
-	/**
+	 *
 	 * @return bool True when this call is the one that tripped it, false when
 	 *              it was already tripped. Concurrent beacon requests would
 	 *              otherwise each fire an email and each write state.
@@ -153,6 +166,16 @@ final class SafeMode {
 		);
 
 		$this->active = true;
+
+		if ( $updated ) {
+			// When it lapses on its own, the unoptimized copies cached in the
+			// meantime need to go too.
+			wp_schedule_single_event( time() + ( $minutes * MINUTE_IN_SECONDS ) + 5, self::EXPIRED_HOOK );
+
+			// Cached pages still carry the optimization that broke them. Safe
+			// mode that only reaches uncached pages is not safe mode.
+			do_action( 'rc-rocket/safe-mode/changed', true, $why );
+		}
 
 		return (bool) $updated;
 	}

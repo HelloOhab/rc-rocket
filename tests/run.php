@@ -72,6 +72,7 @@ ok( 'context: signature collapses posts', 'singular:post' === $context2->signatu
 
 $video   = new Video( $context );
 $vconfig = Video::defaults();
+$vconfig['withhold'] = true; $vconfig['preload_none'] = true;
 $vconfig['posters'] = [ [ 'template' => '', 'url' => 'https://example.com/poster.jpg' ] ];
 
 $out4 = $video->rewrite( DIVI4_VIDEO, $vconfig );

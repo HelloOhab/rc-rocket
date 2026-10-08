@@ -372,3 +372,51 @@
   border-left: 2px solid var(--rcr-violet);
   padding-left: 10px;
 }
+
+/* Optimization level presets (Overview tab). */
+.rcr-presets {
+	margin: 0 0 24px;
+}
+
+.rcr-presets__title {
+	margin: 0 0 4px;
+	font-size: 15px;
+}
+
+.rcr-presets__grid {
+	display: grid;
+	grid-template-columns: repeat( auto-fit, minmax( 220px, 1fr ) );
+	gap: 12px;
+	margin-top: 12px;
+}
+
+.rcr-preset {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 16px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #fff;
+}
+
+.rcr-preset.is-active {
+	border-color: var( --wp-admin-theme-color, #3858e9 );
+	box-shadow: inset 0 0 0 1px var( --wp-admin-theme-color, #3858e9 );
+}
+
+.rcr-preset__text {
+	flex: 1;
+	margin: 0;
+	color: #50575e;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.rcr-preset .components-button {
+	align-self: flex-start;
+}
+
+/* Hero detection table (Media tab). */
+.rcr-lcp-table { margin: 8px 0 12px; }
+.rcr-lcp-table td { word-break: break-word; vertical-align: top; }

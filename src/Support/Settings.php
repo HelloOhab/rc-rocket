@@ -83,6 +83,27 @@ final class Settings {
 		unset( $cursor );
 	}
 
+	/** Drop a key entirely, so a retired setting stops round-tripping. */
+	public function remove( string $path ): void {
+		$this->load();
+
+		$segments = explode( '.', $path );
+		$last     = array_pop( $segments );
+		$cursor   = &$this->data;
+
+		foreach ( $segments as $segment ) {
+			if ( ! isset( $cursor[ $segment ] ) || ! is_array( $cursor[ $segment ] ) ) {
+				unset( $cursor );
+
+				return;
+			}
+			$cursor = &$cursor[ $segment ];
+		}
+
+		unset( $cursor[ $last ] );
+		unset( $cursor );
+	}
+
 	/**
 	 * Merge a partial payload (e.g. from the REST endpoint) over current values.
 	 *
@@ -90,7 +111,7 @@ final class Settings {
 	 */
 	public function merge( array $incoming ): void {
 		$this->load();
-		$this->data = self::deep_merge( $this->data, $incoming );
+		$this->data = self::deep_merge( $this->data, $this->conform( $incoming ) );
 	}
 
 	public function save(): bool {
@@ -124,7 +145,16 @@ final class Settings {
 			return false;
 		}
 
-		$this->data = self::deep_merge( $this->defaults, $decoded );
+		// The schema version describes this database, not the file: keep it,
+		// or the next request re-runs every migration over imported values.
+		$this->load();
+		$schema = $this->data['general']['schema_version'] ?? null;
+
+		$this->data = self::deep_merge( $this->defaults, $this->conform( $decoded ) );
+
+		if ( null !== $schema ) {
+			$this->data['general']['schema_version'] = $schema;
+		}
 
 		// Mark as loaded before saving. save() calls load(), and load() would
 		// otherwise see an unloaded instance and replace everything just
@@ -132,7 +162,11 @@ final class Settings {
 		// every import into a no-op.
 		$this->loaded = true;
 
-		return $this->save();
+		// update_option() reports false when nothing changed. Importing the
+		// same file twice is a success, not a failure.
+		$this->save();
+
+		return true;
 	}
 
 	public function reset(): bool {
@@ -151,6 +185,85 @@ final class Settings {
 		$this->data = self::deep_merge( $this->defaults, is_array( $stored ) ? $stored : [] );
 
 		$this->loaded = true;
+	}
+
+	/**
+	 * Settings arriving from outside — the admin, an imported file, a
+	 * rollback, a preset — keep only values of the type the default has.
+	 * One malformed file copied across sites must not reach code that
+	 * expects a string and fatal every page. Keys with no default (stored
+	 * lists of records such as hero preloads) pass through unchanged.
+	 * The schema version belongs to the migrations, never to input.
+	 *
+	 * @param array<string, mixed> $incoming
+	 * @return array<string, mixed>
+	 */
+	private function conform( array $incoming ): array {
+		if ( isset( $incoming['general'] ) && is_array( $incoming['general'] ) ) {
+			unset( $incoming['general']['schema_version'] );
+
+			if ( [] === $incoming['general'] ) {
+				unset( $incoming['general'] );
+			}
+		}
+
+		return self::conform_branch( $this->defaults, $incoming );
+	}
+
+	private static function conform_branch( array $defaults, array $incoming ): array {
+		$out = [];
+
+		foreach ( $incoming as $key => $value ) {
+			if ( ! array_key_exists( $key, $defaults ) ) {
+				$out[ $key ] = $value;
+				continue;
+			}
+
+			$default = $defaults[ $key ];
+
+			if ( is_array( $default ) && ! array_is_list( $default ) ) {
+				// An emptied branch is left out: deep_merge() would otherwise
+				// replace the whole stored section with nothing.
+				$branch = is_array( $value ) ? self::conform_branch( $default, $value ) : [];
+
+				if ( [] !== $branch ) {
+					$out[ $key ] = $branch;
+				}
+				continue;
+			}
+
+			if ( is_array( $default ) ) {
+				if ( ! is_array( $value ) ) {
+					continue;
+				}
+
+				// A list of strings stays a list of strings. An empty default
+				// carries no type (a list of records, or a map keyed by
+				// handle), so any array is kept as it is.
+				$out[ $key ] = [] !== $default && is_scalar( reset( $default ) )
+					? array_values( array_map( 'strval', array_filter( $value, 'is_scalar' ) ) )
+					: $value;
+				continue;
+			}
+
+			if ( is_bool( $default ) ) {
+				if ( is_bool( $value ) || in_array( $value, [ 0, 1, '0', '1', 'true', 'false' ], true ) ) {
+					$out[ $key ] = is_bool( $value ) ? $value : in_array( $value, [ 1, '1', 'true' ], true );
+				}
+			} elseif ( is_int( $default ) || is_float( $default ) ) {
+				if ( is_numeric( $value ) ) {
+					$out[ $key ] = is_int( $default ) ? (int) $value : (float) $value;
+				}
+			} elseif ( is_string( $default ) ) {
+				if ( is_scalar( $value ) ) {
+					$out[ $key ] = (string) $value;
+				}
+			} elseif ( null === $default ) {
+				$out[ $key ] = $value;
+			}
+		}
+
+		return $out;
 	}
 
 	/**

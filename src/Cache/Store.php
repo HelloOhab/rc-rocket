@@ -29,13 +29,17 @@ final class Store {
 		return $this->cache_dir;
 	}
 
+	/** @var string[] URLs whose entries were deleted during this request. */
+	private array $deleted_urls = [];
+
 	/**
 	 * @param string[] $surrogate_keys
+	 * @param string[] $headers Response headers to replay on a hit.
 	 */
-	public function put( string $url, string $html, array $surrogate_keys, int $ttl, string $variant ): bool {
-		$host  = (string) ( wp_parse_url( $url, PHP_URL_HOST ) ?: '' );
-		$uri   = $this->uri_from_url( $url );
-		$hash  = Key::hash( $host, $uri, $variant, $this->config );
+	public function put( string $url, string $html, array $surrogate_keys, int $ttl, string $variant, array $headers = [] ): bool {
+		$host = Key::host_from_url( $url );
+		$uri  = $this->uri_from_url( $url );
+		$hash = Key::hash( $host, $uri, $variant, $this->config );
 
 		if ( null === $hash ) {
 			return false;
@@ -55,6 +59,8 @@ final class Store {
 			}
 		}
 
+		$mirror = ! empty( $this->config['server_delivery'] ) ? $this->write_mirror( $host, $uri, $variant, $html ) : null;
+
 		$meta = [
 			'url'     => $url,
 			'variant' => $variant,
@@ -62,14 +68,12 @@ final class Store {
 			'ttl'     => $ttl,
 			'expires' => time() + $ttl,
 			'bytes'   => strlen( $html ),
-			'keys'    => array_values( array_unique( $surrogate_keys ) ),
+			'keys'    => array_values( array_unique( array_merge( $surrogate_keys, [ Key::url_key( $host, $uri ) ] ) ) ),
+			'headers' => array_values( $headers ),
+			'mirror'  => $mirror,
 		];
 
 		Filesystem::atomic_write( $paths['meta'], (string) wp_json_encode( $meta ) );
-
-		if ( ! empty( $this->config['server_delivery'] ) ) {
-			$this->write_mirror( $host, $uri, $variant, $html );
-		}
 
 		foreach ( $meta['keys'] as $key ) {
 			$this->index( (string) $key, $hash );
@@ -96,6 +100,7 @@ final class Store {
 
 	public function delete( string $hash ): bool {
 		$paths   = Key::paths( $this->cache_dir, $hash );
+		$meta    = $this->meta( $hash );
 		$deleted = false;
 
 		foreach ( [ 'html', 'gz', 'meta' ] as $part ) {
@@ -104,7 +109,33 @@ final class Store {
 			}
 		}
 
+		// The web server serves the mirror without asking PHP, so an entry
+		// that leaves its mirror behind is never actually invalidated.
+		$mirror = is_array( $meta ) ? (string) ( $meta['mirror'] ?? '' ) : '';
+
+		if ( '' !== $mirror && str_starts_with( $mirror, $this->cache_dir . '/mirror/' ) ) {
+			@unlink( $mirror . '/index.html' ); // phpcs:ignore
+			@unlink( $mirror . '/index.html.gz' ); // phpcs:ignore
+		}
+
+		if ( $deleted && is_array( $meta ) && ! empty( $meta['url'] ) ) {
+			$this->deleted_urls[] = (string) $meta['url'];
+		}
+
 		return $deleted;
+	}
+
+	/**
+	 * URLs that lost their cache entry since the last call. The preloader uses
+	 * this to re-warm exactly what a purge removed.
+	 *
+	 * @return string[]
+	 */
+	public function take_deleted_urls(): array {
+		$urls               = array_values( array_unique( $this->deleted_urls ) );
+		$this->deleted_urls = [];
+
+		return $urls;
 	}
 
 	/**
@@ -192,19 +223,23 @@ final class Store {
 	 * also written to a path the server can resolve with try_files alone. Costs
 	 * one extra write; buys a response that never starts PHP.
 	 */
-	private function write_mirror( string $host, string $uri, string $variant, string $html ): void {
+	private function write_mirror( string $host, string $uri, string $variant, string $html ): ?string {
 		$parts  = explode( '|', $variant );
 		$scheme = $parts[0] ?? 'https';
 		$device = in_array( 'mobile', $parts, true ) ? 'mobile' : 'desktop';
 
 		// Only anonymous, query-free pages are safe to hand to the web server:
-		// it cannot evaluate the rest of our rules.
-		if ( in_array( 'anon', $parts, true ) === false && count( $parts ) > 2 ) {
-			return;
+		// it cannot evaluate the rest of our rules. Every bucket after the
+		// scheme must be a device or "anon" — a logged-in user's bucket or a
+		// cookie bucket (currency, language) is one visitor's page.
+		foreach ( array_slice( $parts, 1 ) as $part ) {
+			if ( ! in_array( $part, [ 'mobile', 'desktop', 'anon' ], true ) ) {
+				return null;
+			}
 		}
 
 		if ( str_contains( $uri, '?' ) ) {
-			return;
+			return null;
 		}
 
 		$path = trim( Key::path_only( $uri ), '/' );
@@ -220,6 +255,8 @@ final class Store {
 				Filesystem::atomic_write( $dir . '/index.html.gz', $gz );
 			}
 		}
+
+		return $dir;
 	}
 
 	private function safe_segment( string $value ): string {
@@ -229,7 +266,8 @@ final class Store {
 	private function safe_path( string $path ): string {
 		$segments = array_map( [ $this, 'safe_segment' ], explode( '/', $path ) );
 
-		return implode( '/', array_filter( $segments ) );
+		// "." and ".." would step out of the mirror directory.
+		return implode( '/', array_filter( $segments, static fn( string $s ): bool => '' !== $s && '.' !== $s && '..' !== $s ) );
 	}
 
 	private function index( string $key, string $hash ): void {

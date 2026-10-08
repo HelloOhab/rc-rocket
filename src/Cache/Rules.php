@@ -32,6 +32,10 @@ final class Rules {
 			return 'donotcachepage';
 		}
 
+		if ( \RCRocket\Support\PageOptions::never_cache() ) {
+			return 'page-option';
+		}
+
 		if ( wp_doing_ajax() || wp_doing_cron() || is_admin() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
 			return 'non-frontend';
 		}
@@ -64,6 +68,12 @@ final class Rules {
 			return 'status:' . http_response_code();
 		}
 
+		$header = $this->header_bypass();
+
+		if ( null !== $header ) {
+			return $header;
+		}
+
 		$commerce = $this->commerce_bypass();
 
 		if ( null !== $commerce ) {
@@ -84,6 +94,23 @@ final class Rules {
 		 * @param string|null $reason
 		 */
 		return apply_filters( 'rc-rocket/cache/bypass_reason', null );
+	}
+
+	/**
+	 * Whatever rendered the page may already have said it must not be shared:
+	 * nocache_headers(), a membership plugin, a form with a session. Respect
+	 * that rather than freeze a private response for the next visitor.
+	 */
+	private function header_bypass(): ?string {
+		foreach ( headers_list() as $line ) {
+			[ $name, $value ] = array_pad( explode( ':', $line, 2 ), 2, '' );
+
+			if ( 'cache-control' === strtolower( trim( $name ) ) && preg_match( '/\b(no-store|private|no-cache)\b/i', $value ) ) {
+				return 'cache-control-header';
+			}
+		}
+
+		return null;
 	}
 
 	/**

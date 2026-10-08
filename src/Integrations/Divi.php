@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace RCRocket\Integrations;
 
+use RCRocket\Frontend\HtmlPipeline;
 use RCRocket\Support\Filesystem;
 use RCRocket\Support\Logger;
 
@@ -95,6 +96,20 @@ final class Divi {
 		$version = $this->version();
 
 		return null === $version ? 0 : (int) explode( '.', $version )[0];
+	}
+
+	/**
+	 * A Visual Builder, Theme Builder or preview request. Answerable from the
+	 * URL alone, so it works at plugins_loaded, before the query exists.
+	 */
+	public static function is_builder_request(): bool {
+		foreach ( [ 'et_fb', 'et_bfb', 'et_pb_preview', 'et_theme_builder_preview', 'et_tb', 'vb' ] as $arg ) {
+			if ( isset( $_GET[ $arg ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+				return true;
+			}
+		}
+
+		return function_exists( 'et_core_is_fb_enabled' ) && did_action( 'wp' ) && et_core_is_fb_enabled();
 	}
 
 	public function is_divi_five(): bool {
@@ -217,10 +232,22 @@ final class Divi {
 			add_action( $hook, [ $this, 'on_theme_builder_save' ], 10, 1 );
 		}
 
-		// Divi settings that regenerate global styles.
-		foreach ( [ 'et_after_update_options', 'update_option_et_divi', 'et_core_page_resource_auto_clear' ] as $hook ) {
-			add_action( $hook, static fn() => do_action( 'rc-rocket/purge/all' ) );
+		// Divi Theme Options saved: global styles changed on every page. The
+		// raw et_divi option is deliberately not watched — Divi writes it for
+		// bookkeeping far more often than anyone changes a design.
+		add_action( 'et_after_update_options', static fn() => do_action( 'rc-rocket/purge/all', 'divi-options' ) );
+
+		// The hooks above are not fired by Divi 4.27 or Divi 5 (checked in
+		// their source). What does happen: Theme Builder templates and their
+		// header/body/footer layouts are posts that get saved, and Theme
+		// Options fire et_epanel_changing_options. A global header or footer
+		// renders on every page, so its edit clears everything.
+		foreach ( [ 'et_template', 'et_header_layout', 'et_body_layout', 'et_footer_layout', 'et_theme_builder' ] as $post_type ) {
+			add_action( 'save_post_' . $post_type, [ $this, 'on_theme_builder_post' ], 10, 1 );
 		}
+
+		add_action( 'et_epanel_changing_options', static fn() => do_action( 'rc-rocket/purge/all', 'divi-options' ) );
+		add_action( 'et_core_page_resource_auto_clear', static fn() => do_action( 'rc-rocket/purge/all', 'divi-static-css' ) );
 
 		// Our purge should take Divi's stale static CSS with it.
 		add_action( 'rc-rocket/cache/purged', [ $this, 'clear_et_cache' ], 10, 2 );
@@ -239,8 +266,16 @@ final class Divi {
 		// A Divi Library layout can be embedded anywhere; there is no cheap
 		// way to know where, so this is the one case that warrants a full flush.
 		if ( $post_id > 0 && 'et_pb_layout' === get_post_type( $post_id ) ) {
-			do_action( 'rc-rocket/purge/all' );
+			do_action( 'rc-rocket/purge/all', 'divi-library' );
 		}
+	}
+
+	public function on_theme_builder_post( int $post_id ): void {
+		if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+			return;
+		}
+
+		do_action( 'rc-rocket/purge/all', 'divi-theme-builder' );
 	}
 
 	public function on_theme_builder_save( mixed $template ): void {
@@ -261,7 +296,7 @@ final class Divi {
 			return;
 		}
 
-		do_action( 'rc-rocket/purge/all' );
+		do_action( 'rc-rocket/purge/all', 'divi-theme-builder' );
 	}
 
 	/**
@@ -413,50 +448,113 @@ final class Divi {
 			return $html;
 		}
 
-		$pattern = '/<input\s+type=["\']hidden["\']\s+id=["\']([^"\']*(?:_wpnonce|et_pb_[a-z_]*nonce)[^"\']*)["\']\s+name=["\']([^"\']+)["\']\s+value=["\']([^"\']*)["\']\s*\/?>/i';
+		// A logged-in visitor's nonces belong to their session; the endpoint
+		// can only mint anonymous ones.
+		if ( is_user_logged_in() ) {
+			return $html;
+		}
+
+		$map     = self::nonce_actions();
+		$pattern = '/<input\s+type=["\']hidden["\']\s+id=["\']([^"\']+)["\']\s+name=["\']([^"\']+)["\']\s+value=["\']([^"\']*)["\']\s*\/?>/i';
 
 		$replaced = preg_replace_callback(
 			$pattern,
-			static function ( array $m ): string {
+			static function ( array $m ) use ( $map ): string {
+				$action = self::nonce_action_for( $m[2], $map );
+
+				// A field whose action we cannot name is left exactly as it
+				// is. Blanking it would break the form outright, which is
+				// worse than a nonce that expires.
+				if ( null === $action ) {
+					return $m[0];
+				}
+
 				return sprintf(
-					'<input type="hidden" id="%1$s" name="%2$s" value="" data-rcr-nonce="%3$s" />',
+					'<input type="hidden" id="%1$s" name="%2$s" value="%3$s" data-rcr-nonce="%4$s" />',
 					esc_attr( $m[1] ),
 					esc_attr( $m[2] ),
-					esc_attr( self::nonce_action_for( $m[2] ) )
+					esc_attr( $m[3] ),
+					esc_attr( $action )
 				);
 			},
 			$html
 		);
 
-		if ( ! is_string( $replaced ) || $replaced === $html ) {
+		if ( ! is_string( $replaced ) ) {
 			return $html;
 		}
 
-		return str_replace( '</body>', $this->hydration_script() . '</body>', $replaced );
+		// The optin module reads its nonce from Divi's localized script data
+		// rather than a field, so it needs refreshing too.
+		$signup = str_contains( $html, 'et_pb_signup' ) && str_contains( $html, 'et_frontend_nonce' );
+
+		if ( $replaced === $html && ! $signup ) {
+			return $html;
+		}
+
+		return HtmlPipeline::before_body_end( $replaced, $this->hydration_script( $signup ) );
 	}
 
-	private static function nonce_action_for( string $field_name ): string {
-		// Divi names the field after the action it verifies.
-		return str_replace( '_wpnonce-', '', $field_name );
+	/**
+	 * Field name prefix to the nonce action Divi verifies it against. Divi
+	 * names its contact form fields after the form, not after the action, so
+	 * the action cannot be derived from the name — it has to be known.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function nonce_actions(): array {
+		/** @param array<string, string> $map */
+		return (array) apply_filters(
+			'rc-rocket/divi/nonce_actions',
+			[
+				'_wpnonce-et-pb-contact-form-submitted' => 'et-pb-contact-form-submit',
+			]
+		);
 	}
 
-	private function hydration_script(): string {
+	/**
+	 * Every action the public nonce endpoint may sign. Anything else is
+	 * refused, so the endpoint cannot be used to mint nonces for arbitrary
+	 * plugin actions.
+	 *
+	 * @return string[]
+	 */
+	public static function refreshable_actions(): array {
+		return array_values( array_unique( array_merge( array_values( self::nonce_actions() ), [ 'et_frontend_nonce' ] ) ) );
+	}
+
+	/** @param array<string, string> $map */
+	private static function nonce_action_for( string $field_name, array $map ): ?string {
+		foreach ( $map as $prefix => $action ) {
+			if ( str_starts_with( $field_name, $prefix ) ) {
+				return $action;
+			}
+		}
+
+		return null;
+	}
+
+	private function hydration_script( bool $signup ): string {
 		$endpoint = esc_url_raw( rest_url( 'rc-rocket/v1/nonces' ) );
+		$signup   = $signup ? 'true' : 'false';
 
 		return <<<HTML
 <script id="rcr-divi-nonces">
 (function () {
   var fields = document.querySelectorAll('input[data-rcr-nonce]');
-  if (!fields.length) return;
+  var SIGNUP = {$signup} && window.et_pb_custom;
+  if (!fields.length && !SIGNUP) return;
   var actions = [].map.call(fields, function (f) { return f.dataset.rcrNonce; });
-  fetch('{$endpoint}?actions=' + encodeURIComponent(actions.join(',')), { credentials: 'same-origin' })
-    .then(function (r) { return r.json(); })
+  if (SIGNUP) actions.push('et_frontend_nonce');
+  fetch('{$endpoint}?actions=' + encodeURIComponent(actions.join(',')), { credentials: 'omit' })
+    .then(function (r) { return r.ok ? r.json() : {}; })
     .then(function (data) {
       [].forEach.call(fields, function (f) {
         if (data[f.dataset.rcrNonce]) f.value = data[f.dataset.rcrNonce];
       });
+      if (SIGNUP && data.et_frontend_nonce) window.et_pb_custom.et_frontend_nonce = data.et_frontend_nonce;
     })
-    .catch(function () { /* Form falls back to a normal reload-and-retry. */ });
+    .catch(function () { /* The rendered nonce stays; it is valid for a day. */ });
 })();
 </script>
 HTML;

@@ -59,9 +59,17 @@ final class AdminMenu {
 		}
 
 		wp_enqueue_script(
+			'rcrocket-admin-panels',
+			RCROCKET_URL . 'assets/admin/panels.js',
+			[ 'wp-element', 'wp-components' ],
+			(string) filemtime( RCROCKET_DIR . 'assets/admin/panels.js' ),
+			true
+		);
+
+		wp_enqueue_script(
 			'rcrocket-admin',
 			RCROCKET_URL . 'assets/admin/app.js',
-			[ 'wp-element', 'wp-components', 'wp-api-fetch', 'wp-i18n' ],
+			[ 'wp-element', 'wp-components', 'wp-api-fetch', 'wp-i18n', 'rcrocket-admin-panels' ],
 			(string) filemtime( $script ),
 			true
 		);
@@ -92,8 +100,8 @@ final class AdminMenu {
 	public function render(): void {
 		if ( ! file_exists( RCROCKET_DIR . 'assets/admin/app.js' ) ) {
 			printf(
-				'<div class="wrap"><h1>RC Rocket</h1><div class="notice notice-warning"><p>%s</p><p><code>npm install &amp;&amp; npm run build</code></p></div></div>',
-				esc_html__( 'The admin interface has not been built yet. Run the build once from the plugin directory:', 'rc-rocket' )
+				'<div class="wrap"><h1>RC Rocket</h1><div class="notice notice-error"><p>%s</p></div></div>',
+				esc_html__( 'The admin interface files are missing. Reinstall the plugin from its release zip.', 'rc-rocket' )
 			);
 
 			return;

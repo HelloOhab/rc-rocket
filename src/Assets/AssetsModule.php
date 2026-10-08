@@ -39,22 +39,27 @@ final class AssetsModule implements Module {
 			'rules'   => [],
 			'fonts'   => Fonts::defaults(),
 			'divi'    => [
-				'unload_modules' => false,
+				'unload_modules' => true,
 			],
 			'bloat'   => [
 				'emojis'          => true,
-				'embeds'          => false,
+				'embeds'          => true,
 				'dashicons'       => true,
-				'jquery_migrate'  => false,
-				'xmlrpc'          => true,
+				'jquery_migrate'  => true,
+				'xmlrpc'          => false,
 				'rsd_link'        => true,
 				'shortlink'       => true,
 				'generator'       => true,
 				'wlwmanifest'     => true,
 				'rest_links'      => true,
-				'heartbeat_front' => true,
 				'block_library'   => false,
 				'comment_reply'   => true,
+			],
+			'heartbeat' => [
+				'frontend' => 'disable',
+				'backend'  => 'reduce',
+				'editor'   => 'reduce',
+				'interval' => 120,
 			],
 		];
 	}
@@ -91,6 +96,10 @@ final class AssetsModule implements Module {
 		/** @var Settings $settings */
 		$settings = $container->get( 'settings' );
 
+		// Heartbeat control is admin housekeeping, not output rewriting, so
+		// safe mode does not switch it off.
+		$this->apply_heartbeat( (array) $settings->get( 'assets.heartbeat', [] ) );
+
 		if ( $settings->enabled( 'assets.scan' ) ) {
 			// Recording is read-only with respect to the page, so it runs even
 			// in safe mode — that is precisely when you want the inventory.
@@ -101,8 +110,12 @@ final class AssetsModule implements Module {
 			return;
 		}
 
-		// Head cleanup is all remove_action() calls; no query needed.
-		$this->apply_bloat_rules( $settings );
+		// Head cleanup is all remove_action() calls; no query needed. Never
+		// inside the Divi builder: it runs on the front end, and taking
+		// jQuery Migrate or comment-reply away from it is not a speed-up.
+		if ( ! \RCRocket\Integrations\Divi::is_builder_request() ) {
+			$this->apply_bloat_rules( $settings );
+		}
 
 		$container->get( 'assets.fonts' )->hooks();
 		$container->get( 'assets.divi' )->hooks();
@@ -134,7 +147,7 @@ final class AssetsModule implements Module {
 
 		$rules = (array) $settings->get( 'assets.rules', [] );
 
-		if ( ! $rules ) {
+		if ( ! $rules || \RCRocket\Support\PageOptions::off( 'asset_rules' ) ) {
 			return;
 		}
 
@@ -222,8 +235,9 @@ final class AssetsModule implements Module {
 		}
 
 		if ( ! empty( $bloat['jquery_migrate'] ) ) {
-			// Divi 4 themes and older third-party modules still rely on this,
-			// which is why it defaults to off.
+			// Some older Divi 4 modules still call removed jQuery APIs. If
+			// one does, the error beacon sees it and rolls back; the Safe
+			// preset keeps Migrate.
 			add_filter( 'wp_default_scripts', static function ( $scripts ): void {
 				if ( ! is_admin() && isset( $scripts->registered['jquery'] ) ) {
 					$scripts->registered['jquery']->deps = array_diff(
@@ -234,7 +248,9 @@ final class AssetsModule implements Module {
 			} );
 		}
 
-		if ( ! empty( $bloat['xmlrpc'] ) ) {
+		// Jetpack and the WordPress mobile apps talk to the site over
+		// XML-RPC; switching it off for them is breakage, not speed.
+		if ( ! empty( $bloat['xmlrpc'] ) && ! defined( 'JETPACK__VERSION' ) ) {
 			add_filter( 'xmlrpc_enabled', '__return_false' );
 			remove_action( 'wp_head', 'rsd_link' );
 		}
@@ -279,14 +295,66 @@ final class AssetsModule implements Module {
 			}, PHP_INT_MAX );
 		}
 
-		if ( ! empty( $bloat['heartbeat_front'] ) ) {
-			add_action( 'init', static function (): void {
-				global $pagenow;
+	}
 
-				if ( ! is_admin() || 'post.php' !== $pagenow ) {
-					wp_deregister_script( 'heartbeat' );
+	// ------------------------------------------------------------ heartbeat
+
+	/**
+	 * The Heartbeat API polls admin-ajax.php every 15–60 seconds from every
+	 * open tab. On a managed host each poll is an uncached PHP request that
+	 * counts against the plan, and a forgotten dashboard tab costs as much as
+	 * a steady trickle of visitors.
+	 *
+	 * Three contexts, decided separately. The editor can be slowed but never
+	 * stopped: post locking and autosave recovery run on it.
+	 */
+	private function apply_heartbeat( array $config ): void {
+		$interval = max( 15, min( 120, (int) ( $config['interval'] ?? 120 ) ) );
+
+		$mode = static function () use ( $config ): string {
+			global $pagenow;
+
+			// The Divi Visual Builder is an editor that happens to run on
+			// the front end: post locking, autosave and the "you have been
+			// logged out" check all ride on Heartbeat there.
+			if ( ! is_admin() && \RCRocket\Integrations\Divi::is_builder_request() ) {
+				$editor = (string) ( $config['editor'] ?? 'default' );
+
+				return 'disable' === $editor ? 'reduce' : $editor;
+			}
+
+			if ( ! is_admin() ) {
+				return (string) ( $config['frontend'] ?? 'default' );
+			}
+
+			if ( in_array( $pagenow, [ 'post.php', 'post-new.php', 'site-editor.php' ], true ) ) {
+				$editor = (string) ( $config['editor'] ?? 'default' );
+
+				return 'disable' === $editor ? 'reduce' : $editor;
+			}
+
+			return (string) ( $config['backend'] ?? 'default' );
+		};
+
+		add_filter(
+			'heartbeat_settings',
+			static function ( array $settings ) use ( $mode, $interval ): array {
+				if ( 'reduce' === $mode() ) {
+					$settings['interval']        = $interval;
+					$settings['minimalInterval'] = $interval;
 				}
-			}, 1 );
-		}
+
+				return $settings;
+			}
+		);
+
+		$disable = static function () use ( $mode ): void {
+			if ( 'disable' === $mode() ) {
+				wp_deregister_script( 'heartbeat' );
+			}
+		};
+
+		add_action( 'wp_enqueue_scripts', $disable, 1 );
+		add_action( 'admin_enqueue_scripts', $disable, 1 );
 	}
 }

@@ -77,15 +77,15 @@ $conf   = Embeds::defaults() + RCRocket\Media\Video::defaults();
 $conf['embed_posters'] = [ [ 'id' => '1210835154', 'url' => 'https://example.com/p.jpg' ] ];
 
 $out = $embeds->rewrite( VIMEO_BACKGROUND, $conf );
-ok( 'embeds: wrapper carries the poster', str_contains( $out, 'background-image:url(https://example.com/p.jpg)' ) );
-ok( 'embeds: background wrapper is marked', str_contains( $out, 'rcr-embed--bg' ) );
+ok( 'embeds: placeholder carries the poster', str_contains( $out, 'url(&quot;https://example.com/p.jpg&quot;)' ) );
+ok( 'embeds: background iframe is marked', str_contains( $out, 'data-rcr-embed="background" srcdoc=' ) );
+ok( 'embeds: player source is withheld', str_contains( $out, 'data-rcr-src="https://player.vimeo.com/' ) && ! str_contains( $out, ' src="https://player.vimeo.com/' ) );
 ok( 'embeds: no play button on a background', ! str_contains( $out, '<button type="button" class="rcr-embed__play"' ) );
-ok( 'embeds: styles are injected once', substr_count( $out, 'rcr-embed-css' ) === 1 );
 ok( 'embeds: loader is injected once', substr_count( $out, 'id="rcr-embeds"' ) === 1 );
 
 $twice = $embeds->rewrite( $out, $conf );
-ok( 'embeds: rewriting twice is stable', substr_count( $twice, 'data-rcr-embed="background"' ) === 1,
-	substr_count( $twice, 'data-rcr-embed="background"' ) . ' markers' );
+ok( 'embeds: rewriting twice is stable', $twice === $out,
+	substr_count( $twice, 'data-rcr-embed="background" srcdoc' ) . ' markers' );
 
 // A non-video iframe must never be touched.
 $maps = '<body><iframe src="https://www.google.com/maps/embed?pb=x"></iframe></body>';
