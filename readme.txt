@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.0
+Stable tag: 0.12.1
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,20 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.1 =
+From testing on a Divi 4 and a Divi 5 site on Kinsta.
+* New: "Don't let tracking cookies block caching" (Cache tab, on by
+  default). A page that sets a cookie from the server is never cached by
+  Kinsta, WP Engine, Cloudflare or RC Rocket, and Meta Pixel for WordPress
+  sets _fbp and _fbc that way on every page, so every visitor got an
+  uncached page. Those cookies are now removed from pages for logged-out
+  visitors; the pixel still sets them in the browser. With pages cached,
+  the plugin's server-side (Conversions API) events only fire on cache
+  misses; browser pixel events are unaffected. The cookie list is editable.
+* System check: "Home page served from cache" no longer names Cloudflare's
+  __cf_bm cookie as the cause of a bypass. Cloudflare adds it at its edge,
+  after the host has decided.
 
 = 0.12.0 =
 Fixes from a full review before rolling out to every site.

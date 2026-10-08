@@ -289,6 +289,95 @@ async function visualDiff(browser, aPath, bPath, outPath) {
   return { pct: result.pct, heightOn: result.heightA, heightOff: result.heightB };
 }
 
+// ---------------------------------------------------------------- report
+
+const fmt = (v, unit = 'ms', digits = 0) => (v == null ? '–' : `${Number(v).toFixed(digits)}${unit}`);
+const delta = (on, off, lowerIsBetter = true, unit = 'ms', digits = 0) => {
+  if (on == null || off == null) return '';
+  const d = on - off;
+  if (Math.abs(d) < (unit === '' ? 0.005 : 1)) return '<span class="d">±0</span>';
+  const good = lowerIsBetter ? d < 0 : d > 0;
+  return `<span class="d ${good ? 'good' : 'bad'}">${d > 0 ? '+' : ''}${d.toFixed(digits)}${unit}</span>`;
+};
+
+const metric = (label, k, unit = 'ms', digits = 0) =>
+  (row) => `<tr><th>${label}</th><td>${fmt(row.on[k], unit, digits)}</td><td>${fmt(row.off[k], unit, digits)}</td><td>${delta(row.on[k], row.off[k], true, unit, digits)}</td></tr>`;
+
+const METRICS = [
+  metric('Time to first byte', 'ttfb'),
+  metric('First contentful paint', 'fcp'),
+  metric('Largest contentful paint', 'lcp'),
+  metric('Total blocking time', 'tbt'),
+  metric('Cumulative layout shift', 'cls', '', 3),
+  metric('Load event', 'load'),
+  metric('Bytes before interaction', 'kbInitial', ' KB'),
+  metric('Bytes after interaction', 'kbTotal', ' KB'),
+  metric('Requests', 'requests', ''),
+];
+
+const list = (xs) => (xs?.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">None</p>');
+async function writeReport() {
+  const counts = { PASS: 0, CHECK: 0, FAIL: 0 };
+  results.forEach((r) => counts[r.verdict]++);
+
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RC Rocket Comparison</title>
+<style>
+:root{--bg:#fff;--fg:#1d2327;--muted:#646970;--line:#dcdcde;--card:#f6f7f7;--pass:#00a32a;--check:#dba617;--fail:#d63638}
+@media (prefers-color-scheme:dark){:root{--bg:#1d2327;--fg:#f0f0f1;--muted:#a7aaad;--line:#3c434a;--card:#2c3338}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:0;word-break:break-all}h3{font-size:14px;margin:16px 0 6px}
+.muted{color:var(--muted)}.sum{display:flex;gap:12px;margin:16px 0 24px;flex-wrap:wrap}
+.pill{padding:6px 12px;border-radius:999px;background:var(--card);font-weight:600}
+.v{display:inline-block;padding:2px 10px;border-radius:4px;color:#fff;font-weight:700;font-size:12px}
+.PASS{background:var(--pass)}.CHECK{background:var(--check);color:#1d2327}.FAIL{background:var(--fail)}
+section{border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:20px}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+table{border-collapse:collapse;width:100%;max-width:560px}td,th{padding:4px 8px;border-bottom:1px solid var(--line);text-align:right}th{text-align:left;font-weight:500}
+thead th{text-align:right}thead th:first-child{text-align:left}
+.d.good{color:var(--pass)}.d.bad{color:var(--fail)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.shots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.shots figure{margin:0}.shots img{width:100%;border:1px solid var(--line)}
+figcaption{font-size:12px;color:var(--muted)}ul{margin:4px 0;padding-left:18px}li{word-break:break-all}
+.issues li{color:var(--fail)}.warnings li{color:var(--check)}
+code{font-size:12px}
+@media (max-width:640px){.shots{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>RC Rocket Comparison</h1>
+<p class="muted">Each page loaded ${opt.runs}× with RC Rocket on and ${opt.runs}× with <code>?rcr_safe=1</code> (optimizations off), median shown. Mobile is throttled to slow 4G and a 4× slower CPU. ${new Date().toISOString()}</p>
+<div class="sum"><span class="pill">${results.length} checks</span><span class="pill" style="color:var(--pass)">${counts.PASS} pass</span><span class="pill" style="color:var(--check)">${counts.CHECK} to check</span><span class="pill" style="color:var(--fail)">${counts.FAIL} fail</span></div>
+${results.map((r) => `
+<section>
+<header><span class="v ${r.verdict}">${r.verdict}</span><h2>${esc(r.url)}</h2><span class="muted">${r.device}</span></header>
+${r.issues.length ? `<h3>Blocking</h3><ul class="issues">${r.issues.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+${r.warnings.length ? `<h3>To check</h3><ul class="warnings">${r.warnings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+<div class="grid">
+<div><h3>Metrics</h3><table><thead><tr><th></th><th>On</th><th>Off</th><th>Δ</th></tr></thead><tbody>${METRICS.map((m) => m(r)).join('')}</tbody></table>
+<p class="muted">LCP element (on): <code>${esc(r.on.lcpEl || '–')}</code>${r.on.lcpUrl ? `<br><code>${esc(r.on.lcpUrl)}</code>` : ''}<br>LCP element (off): <code>${esc(r.off.lcpEl || '–')}</code></p></div>
+<div><h3>What RC Rocket changed</h3>${r.on.markers ? `<table><tbody>${Object.entries(r.on.markers).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">–</p>'}
+<h3>Response headers (on)</h3>${r.on.headers && Object.keys(r.on.headers).length ? `<table><tbody>${Object.entries(r.on.headers).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">None</p>'}
+<p class="muted">jQuery after interaction: on ${esc(r.on.jquery)}, off ${esc(r.off.jquery)}</p></div>
+</div>
+<div class="grid">
+<div><h3>JS errors (on)</h3>${list(r.on.pageErrors)}</div>
+<div><h3>JS errors (off)</h3>${list(r.off.pageErrors)}</div>
+<div><h3>Failed requests (on)</h3>${list(r.on.failed)}</div>
+</div>
+${r.on.shotFold ? `<h3>Above the fold${r.diff_fold ? ` · ${r.diff_fold.pct.toFixed(1)}% different` : ''}</h3>
+<div class="shots"><figure><a href="${r.on.shotFold}"><img loading="lazy" src="${r.on.shotFold}" alt="On"></a><figcaption>On</figcaption></figure>
+<figure><a href="${r.off.shotFold}"><img loading="lazy" src="${r.off.shotFold}" alt="Off"></a><figcaption>Off</figcaption></figure>
+${r.diff_fold ? `<figure><a href="${r.diff_fold.image}"><img loading="lazy" src="${r.diff_fold.image}" alt="Difference"></a><figcaption>Difference (red)</figcaption></figure>` : ''}</div>
+<p class="muted">Full page: <a href="${r.on.shotFull}">on</a> · <a href="${r.off.shotFull}">off</a>${r.diff_full ? ` · <a href="${r.diff_full.image}">difference</a> (${r.diff_full.pct.toFixed(1)}%, ${r.diff_full.heightOn}px vs ${r.diff_full.heightOff}px tall)` : ''}</p>` : ''}
+</section>`).join('')}
+</main></body></html>`;
+
+  await writeFile(path.join(outDir, 'results.json'), JSON.stringify({ when: new Date().toISOString(), runs: opt.runs, results }, null, 2));
+  await writeFile(path.join(outDir, 'index.html'), html);
+  return counts;
+}
+
 // ---------------------------------------------------------------- run
 
 const outDir = path.resolve(opt.out);
@@ -391,96 +480,15 @@ for (const url of urls) {
     row.verdict = row.issues.length ? 'FAIL' : row.warnings.length ? 'CHECK' : 'PASS';
     console.log(`  => ${row.verdict}${row.issues.length ? '\n     ' + row.issues.join('\n     ') : ''}`);
     results.push(row);
+    // Saved after every page, so a long run that is stopped keeps its results.
+    await writeReport();
   }
 }
 
 await browser.close();
 
-// ---------------------------------------------------------------- report
 
-const fmt = (v, unit = 'ms', digits = 0) => (v == null ? '–' : `${Number(v).toFixed(digits)}${unit}`);
-const delta = (on, off, lowerIsBetter = true, unit = 'ms', digits = 0) => {
-  if (on == null || off == null) return '';
-  const d = on - off;
-  if (Math.abs(d) < (unit === '' ? 0.005 : 1)) return '<span class="d">±0</span>';
-  const good = lowerIsBetter ? d < 0 : d > 0;
-  return `<span class="d ${good ? 'good' : 'bad'}">${d > 0 ? '+' : ''}${d.toFixed(digits)}${unit}</span>`;
-};
-
-const metric = (label, k, unit = 'ms', digits = 0) =>
-  (row) => `<tr><th>${label}</th><td>${fmt(row.on[k], unit, digits)}</td><td>${fmt(row.off[k], unit, digits)}</td><td>${delta(row.on[k], row.off[k], true, unit, digits)}</td></tr>`;
-
-const METRICS = [
-  metric('Time to first byte', 'ttfb'),
-  metric('First contentful paint', 'fcp'),
-  metric('Largest contentful paint', 'lcp'),
-  metric('Total blocking time', 'tbt'),
-  metric('Cumulative layout shift', 'cls', '', 3),
-  metric('Load event', 'load'),
-  metric('Bytes before interaction', 'kbInitial', ' KB'),
-  metric('Bytes after interaction', 'kbTotal', ' KB'),
-  metric('Requests', 'requests', ''),
-];
-
-const list = (xs) => (xs?.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">None</p>');
-const counts = { PASS: 0, CHECK: 0, FAIL: 0 };
-results.forEach((r) => counts[r.verdict]++);
-
-const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RC Rocket Comparison</title>
-<style>
-:root{--bg:#fff;--fg:#1d2327;--muted:#646970;--line:#dcdcde;--card:#f6f7f7;--pass:#00a32a;--check:#dba617;--fail:#d63638}
-@media (prefers-color-scheme:dark){:root{--bg:#1d2327;--fg:#f0f0f1;--muted:#a7aaad;--line:#3c434a;--card:#2c3338}}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-main{max-width:1200px;margin:0 auto;padding:24px 16px}
-h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:0;word-break:break-all}h3{font-size:14px;margin:16px 0 6px}
-.muted{color:var(--muted)}.sum{display:flex;gap:12px;margin:16px 0 24px;flex-wrap:wrap}
-.pill{padding:6px 12px;border-radius:999px;background:var(--card);font-weight:600}
-.v{display:inline-block;padding:2px 10px;border-radius:4px;color:#fff;font-weight:700;font-size:12px}
-.PASS{background:var(--pass)}.CHECK{background:var(--check);color:#1d2327}.FAIL{background:var(--fail)}
-section{border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:20px}
-header{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-table{border-collapse:collapse;width:100%;max-width:560px}td,th{padding:4px 8px;border-bottom:1px solid var(--line);text-align:right}th{text-align:left;font-weight:500}
-thead th{text-align:right}thead th:first-child{text-align:left}
-.d.good{color:var(--pass)}.d.bad{color:var(--fail)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
-.shots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.shots figure{margin:0}.shots img{width:100%;border:1px solid var(--line)}
-figcaption{font-size:12px;color:var(--muted)}ul{margin:4px 0;padding-left:18px}li{word-break:break-all}
-.issues li{color:var(--fail)}.warnings li{color:var(--check)}
-code{font-size:12px}
-@media (max-width:640px){.shots{grid-template-columns:1fr}}
-</style></head><body><main>
-<h1>RC Rocket Comparison</h1>
-<p class="muted">Each page loaded ${opt.runs}× with RC Rocket on and ${opt.runs}× with <code>?rcr_safe=1</code> (optimizations off), median shown. Mobile is throttled to slow 4G and a 4× slower CPU. ${new Date().toISOString()}</p>
-<div class="sum"><span class="pill">${results.length} checks</span><span class="pill" style="color:var(--pass)">${counts.PASS} pass</span><span class="pill" style="color:var(--check)">${counts.CHECK} to check</span><span class="pill" style="color:var(--fail)">${counts.FAIL} fail</span></div>
-${results.map((r) => `
-<section>
-<header><span class="v ${r.verdict}">${r.verdict}</span><h2>${esc(r.url)}</h2><span class="muted">${r.device}</span></header>
-${r.issues.length ? `<h3>Blocking</h3><ul class="issues">${r.issues.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-${r.warnings.length ? `<h3>To check</h3><ul class="warnings">${r.warnings.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-<div class="grid">
-<div><h3>Metrics</h3><table><thead><tr><th></th><th>On</th><th>Off</th><th>Δ</th></tr></thead><tbody>${METRICS.map((m) => m(r)).join('')}</tbody></table>
-<p class="muted">LCP element (on): <code>${esc(r.on.lcpEl || '–')}</code>${r.on.lcpUrl ? `<br><code>${esc(r.on.lcpUrl)}</code>` : ''}<br>LCP element (off): <code>${esc(r.off.lcpEl || '–')}</code></p></div>
-<div><h3>What RC Rocket changed</h3>${r.on.markers ? `<table><tbody>${Object.entries(r.on.markers).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">–</p>'}
-<h3>Response headers (on)</h3>${r.on.headers && Object.keys(r.on.headers).length ? `<table><tbody>${Object.entries(r.on.headers).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">None</p>'}
-<p class="muted">jQuery after interaction: on ${esc(r.on.jquery)}, off ${esc(r.off.jquery)}</p></div>
-</div>
-<div class="grid">
-<div><h3>JS errors (on)</h3>${list(r.on.pageErrors)}</div>
-<div><h3>JS errors (off)</h3>${list(r.off.pageErrors)}</div>
-<div><h3>Failed requests (on)</h3>${list(r.on.failed)}</div>
-</div>
-${r.on.shotFold ? `<h3>Above the fold${r.diff_fold ? ` · ${r.diff_fold.pct.toFixed(1)}% different` : ''}</h3>
-<div class="shots"><figure><a href="${r.on.shotFold}"><img loading="lazy" src="${r.on.shotFold}" alt="On"></a><figcaption>On</figcaption></figure>
-<figure><a href="${r.off.shotFold}"><img loading="lazy" src="${r.off.shotFold}" alt="Off"></a><figcaption>Off</figcaption></figure>
-${r.diff_fold ? `<figure><a href="${r.diff_fold.image}"><img loading="lazy" src="${r.diff_fold.image}" alt="Difference"></a><figcaption>Difference (red)</figcaption></figure>` : ''}</div>
-<p class="muted">Full page: <a href="${r.on.shotFull}">on</a> · <a href="${r.off.shotFull}">off</a>${r.diff_full ? ` · <a href="${r.diff_full.image}">difference</a> (${r.diff_full.pct.toFixed(1)}%, ${r.diff_full.heightOn}px vs ${r.diff_full.heightOff}px tall)` : ''}</p>` : ''}
-</section>`).join('')}
-</main></body></html>`;
-
-await writeFile(path.join(outDir, 'results.json'), JSON.stringify({ when: new Date().toISOString(), runs: opt.runs, results }, null, 2));
-await writeFile(path.join(outDir, 'index.html'), html);
+const counts = await writeReport();
 
 console.log(`\n${counts.PASS} pass, ${counts.CHECK} to check, ${counts.FAIL} fail → ${path.join(outDir, 'index.html')}`);
 process.exit(counts.FAIL ? 1 : 0);

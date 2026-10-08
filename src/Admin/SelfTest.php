@@ -132,7 +132,9 @@ final class SelfTest {
 		foreach ( (array) ( $this->front_headers['set-cookie'] ?? [] ) as $cookie ) {
 			$name = trim( (string) strtok( (string) $cookie, '=' ) );
 
-			if ( '' !== $name ) {
+			// Cloudflare adds these at its edge, after the host has already
+			// decided whether to cache: they never cause a BYPASS.
+			if ( '' !== $name && ! in_array( $name, [ '__cf_bm', '__cflb', '_cfuvid', 'cf_clearance' ], true ) ) {
 				$why[] = 'sets the cookie ' . $name;
 			}
 		}

@@ -315,6 +315,23 @@
       ),
       wp.element.createElement(
         D,
+        { title: "Tracking cookies", initialOpen: !1 },
+        wp.element.createElement(P, {
+          label: "Don't let tracking cookies block caching",
+          help: "A page that sets a cookie from the server is never cached by Kinsta, WP Engine, Cloudflare or RC Rocket. Meta Pixel for WordPress sets _fbp and _fbc this way on every page. This removes those cookies from pages for logged-out visitors; the pixel still sets them in the browser.",
+          checked: !!s.strip_tracking_cookies,
+          onChange: a("strip_tracking_cookies"),
+        }),
+        s.strip_tracking_cookies &&
+          wp.element.createElement(ne, {
+            label: "Cookie names",
+            help: "One per line. Only cookies that a tracking script also sets in the browser belong here, never a login, cart or consent cookie.",
+            value: ie(s.tracking_cookies),
+            onChange: (i) => a("tracking_cookies")(re(i)),
+          }),
+      ),
+      wp.element.createElement(
+        D,
         { title: "Divi", initialOpen: !0 },
         wp.element.createElement(P, {
           label: "Clear Divi's asset cache too",

@@ -135,4 +135,9 @@ $bgout = ( new RCRocket\Media\Backgrounds() )->rewrite( $bg . '</body></html>' )
 ok( 'backgrounds: scripts are left alone', str_contains( $bgout, 'et_pb_section x">' ) );
 ok( 'backgrounds: the first three real sections are eager', str_contains( $bgout, 's2 rcr-bg-in' ) && ! str_contains( $bgout, 's3 rcr-bg-in' ) );
 
+// Tracking cookies are matched by exact name, never by prefix.
+require_once __DIR__ . '/../src/Cache/TrackingCookies.php';
+ok( 'cookies: name is read from a Set-Cookie line', '_fbp' === RCRocket\Cache\TrackingCookies::cookie_name( 'Set-Cookie: _fbp=fb.1.1; expires=x; path=/' ) );
+ok( 'cookies: a similar name is a different cookie', '_fbp_consent' === RCRocket\Cache\TrackingCookies::cookie_name( 'set-cookie: _fbp_consent=1' ) );
+
 report();
