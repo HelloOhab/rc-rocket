@@ -33,8 +33,10 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--sites') opt.sites = argv[++i];
   else if (a === '--devices') opt.devices = argv[++i];
   else if (a === '--headed') opt.headed = true;
+  else if (a === '--rescore') opt.rescore = argv[++i];
   else if (a === '-h' || a === '--help') {
     console.log('usage: node compare.mjs [--sites file] [--runs 3] [--out report] [--devices mobile,desktop] [url ...]');
+    console.log('       node compare.mjs --rescore report     (re-judge a saved run and rewrite its report)');
     process.exit(0);
   } else urls.push(a);
 }
@@ -47,7 +49,7 @@ if (opt.sites) {
   }
 }
 
-if (!urls.length) {
+if (!urls.length && !opt.rescore) {
   console.error('No URLs. Pass them as arguments or with --sites sites.txt');
   process.exit(2);
 }
@@ -138,6 +140,53 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 // Normalise messages so the same error on both variants compares equal.
 const norm = (s) => String(s).replace(/rcr_safe=1&?/g, '').replace(/[?&]ver=[^\s&'")]+/g, '').replace(/:\d+:\d+/g, '').slice(0, 300);
+
+// A failed request is identified by status, host and path. Query strings
+// carry the page address (with ?rcr_safe=1 on the off side), timestamps and
+// one-time tokens, so the same failure never has the same full URL twice.
+const requestKey = (line) => {
+  const m = String(line).match(/^(\S+)\s+(\S+)/);
+  if (!m) return String(line);
+  try {
+    const u = new URL(m[2]);
+    return `${m[1]} ${u.host}${u.pathname.replace(/\/(?=[^/]*\d)[A-Za-z0-9._~-]{12,}/g, '/…')}`;
+  } catch {
+    return String(line);
+  }
+};
+
+function judge(row) {
+  const { on, off } = row;
+  row.issues = [];
+  row.warnings = [];
+
+  if (on.navError) row.issues.push(`Page did not load with RC Rocket on: ${on.navError}`);
+  if (on.status && on.status !== 200) row.issues.push(`HTTP ${on.status} with RC Rocket on`);
+
+  const onlyOn = (k, key = (x) => x) => {
+    const seen = new Set((off[k] || []).map(key));
+    const out = new Map();
+    for (const e of on[k] || []) if (!seen.has(key(e)) && !out.has(key(e))) out.set(key(e), e);
+    return [...out.values()];
+  };
+  for (const e of onlyOn('pageErrors')) row.issues.push(`JS error only with RC Rocket on: ${e}`);
+  for (const e of onlyOn('failed', requestKey)) row.issues.push(`Request failing only with RC Rocket on: ${e}`);
+  for (const e of onlyOn('brokenImages', requestKey)) row.issues.push(`Image broken only with RC Rocket on: ${e}`);
+  for (const e of onlyOn('consoleErrors', (x) => x.replace(/https?:\/\/\S+/g, (u) => requestKey('x ' + u)))) row.warnings.push(`Console error only with RC Rocket on: ${e}`);
+  if (on.jquery === 'stand-in') row.issues.push('jQuery is still a stand-in after interaction: a delayed script never released');
+
+  if (on.lcp && off.lcp && on.lcp > off.lcp * 1.1 + 100) row.warnings.push(`LCP slower with RC Rocket on (${Math.round(on.lcp)} vs ${Math.round(off.lcp)} ms)`);
+  if (on.cls != null && off.cls != null && on.cls > off.cls + 0.05) row.warnings.push(`More layout shift with RC Rocket on (CLS ${on.cls.toFixed(3)} vs ${off.cls.toFixed(3)})`);
+  if (on.height && off.height && Math.abs(on.height - off.height) / off.height > 0.03)
+    row.warnings.push(`Page height differs (${on.height}px on vs ${off.height}px off): a section may be missing, collapsed or resized`);
+  if (on.markers && !on.headers?.['x-rc-rocket-cache'] && !on.headers?.['x-kinsta-cache'] && !on.headers?.['cf-cache-status'] && !on.headers?.['x-cache'])
+    row.warnings.push('No page-cache header on the response: the page may not be cached');
+  const fold = row.diff_fold?.pct ?? 0;
+  if (fold > 5) row.warnings.push(`Above the fold looks different with RC Rocket on (${fold.toFixed(1)}% of pixels): check the screenshots (sliders and animations also cause this)`);
+
+  row.verdict = row.issues.length ? 'FAIL' : row.warnings.length ? 'CHECK' : 'PASS';
+  return row;
+}
 
 async function scrollThrough(page) {
   await page.evaluate(async () => {
@@ -380,15 +429,23 @@ ${r.diff_fold ? `<figure><a href="${r.diff_fold.image}"><img loading="lazy" src=
 
 // ---------------------------------------------------------------- run
 
-const outDir = path.resolve(opt.out);
+const outDir = path.resolve(opt.rescore || opt.out);
 const shotDir = path.join(outDir, 'shots');
 await mkdir(shotDir, { recursive: true });
 
-const browser = await chromium.launch({ headless: !opt.headed });
-const devices = opt.devices.split(',').map((s) => s.trim()).filter((s) => DEVICES[s]);
 const results = [];
 
-for (const url of urls) {
+// Re-judge a saved run with the current rules; nothing is loaded again.
+if (opt.rescore) {
+  const saved = JSON.parse(await readFile(path.join(outDir, 'results.json'), 'utf8'));
+  opt.runs = saved.runs;
+  results.push(...saved.results.map(judge));
+}
+
+const browser = opt.rescore ? null : await chromium.launch({ headless: !opt.headed });
+const devices = opt.devices.split(',').map((s) => s.trim()).filter((s) => DEVICES[s]);
+
+for (const url of opt.rescore ? [] : urls) {
   for (const device of devices) {
     console.log(`\n${url} [${device}]`);
     const runs = { on: [], off: [] };
@@ -445,23 +502,6 @@ for (const url of urls) {
     const off = summarise(runs.off);
     const row = { url, device, on, off, issues: [], warnings: [] };
 
-    if (on.navError) row.issues.push(`Page did not load with RC Rocket on: ${on.navError}`);
-    if (on.status && on.status !== 200) row.issues.push(`HTTP ${on.status} with RC Rocket on`);
-
-    const onlyOn = (k) => on[k].filter((e) => !off[k].includes(e));
-    for (const e of onlyOn('pageErrors')) row.issues.push(`JS error only with RC Rocket on: ${e}`);
-    for (const e of onlyOn('failed')) row.issues.push(`Request failing only with RC Rocket on: ${e}`);
-    for (const e of onlyOn('brokenImages')) row.issues.push(`Image broken only with RC Rocket on: ${e}`);
-    for (const e of onlyOn('consoleErrors')) row.warnings.push(`Console error only with RC Rocket on: ${e}`);
-    if (on.jquery === 'stand-in') row.issues.push('jQuery is still a stand-in after interaction: a delayed script never released');
-
-    if (on.lcp && off.lcp && on.lcp > off.lcp * 1.1 + 100) row.warnings.push(`LCP slower with RC Rocket on (${Math.round(on.lcp)} vs ${Math.round(off.lcp)} ms)`);
-    if (on.cls != null && off.cls != null && on.cls > off.cls + 0.05) row.warnings.push(`More layout shift with RC Rocket on (CLS ${on.cls.toFixed(3)} vs ${off.cls.toFixed(3)})`);
-    if (on.height && off.height && Math.abs(on.height - off.height) / off.height > 0.03)
-      row.warnings.push(`Page height differs (${on.height}px on vs ${off.height}px off): a section may be missing, collapsed or resized`);
-    if (on.markers && !on.headers?.['x-rc-rocket-cache'] && !on.headers?.['x-kinsta-cache'] && !on.headers?.['cf-cache-status'] && !on.headers?.['x-cache'])
-      row.warnings.push('No page-cache header on the response: the page may not be cached');
-
     if (on.shotFold && off.shotFold) {
       for (const kind of ['fold', 'full']) {
         const a = path.join(outDir, on[kind === 'fold' ? 'shotFold' : 'shotFull']);
@@ -473,11 +513,9 @@ for (const url of urls) {
           /* a missing full-page shot is not worth failing over */
         }
       }
-      const fold = row.diff_fold?.pct ?? 0;
-      if (fold > 5) row.warnings.push(`Above the fold looks different with RC Rocket on (${fold.toFixed(1)}% of pixels): check the screenshots (sliders and animations also cause this)`);
     }
 
-    row.verdict = row.issues.length ? 'FAIL' : row.warnings.length ? 'CHECK' : 'PASS';
+    judge(row);
     console.log(`  => ${row.verdict}${row.issues.length ? '\n     ' + row.issues.join('\n     ') : ''}`);
     results.push(row);
     // Saved after every page, so a long run that is stopped keeps its results.
@@ -485,7 +523,7 @@ for (const url of urls) {
   }
 }
 
-await browser.close();
+await browser?.close();
 
 
 const counts = await writeReport();

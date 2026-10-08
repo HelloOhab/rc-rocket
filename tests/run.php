@@ -140,4 +140,13 @@ require_once __DIR__ . '/../src/Cache/TrackingCookies.php';
 ok( 'cookies: name is read from a Set-Cookie line', '_fbp' === RCRocket\Cache\TrackingCookies::cookie_name( 'Set-Cookie: _fbp=fb.1.1; expires=x; path=/' ) );
 ok( 'cookies: a similar name is a different cookie', '_fbp_consent' === RCRocket\Cache\TrackingCookies::cookie_name( 'set-cookie: _fbp_consent=1' ) );
 
+// Lazy-load exclusions: skip-lazy is a class name, not a substring.
+require_once __DIR__ . '/../src/Media/MediaModule.php';
+$ex = [ 'skip-lazy', 'no-lazy', 'et_pb_menu__logo', 'hero.jpg' ];
+ok( 'exclusions: skip-lazy class is excluded', RCRocket\Media\MediaModule::excluded( ' class="a skip-lazy b" src="x.jpg"', $ex ) );
+ok( 'exclusions: Divi Supreme dsm-skip-lazyload is not', ! RCRocket\Media\MediaModule::excluded( ' class="dsm-skip-lazyload" src="x.jpg"', $ex ) );
+ok( 'exclusions: no-lazy inside another class is not', ! RCRocket\Media\MediaModule::excluded( ' class="has-no-lazyness" src="x.jpg"', $ex ) );
+ok( 'exclusions: file names still match anywhere', RCRocket\Media\MediaModule::excluded( ' src="/uploads/my-hero.jpg"', $ex ) );
+ok( 'exclusions: Divi menu logo class still matches', RCRocket\Media\MediaModule::excluded( ' class="et_pb_menu__logo-img"', $ex ) );
+
 report();

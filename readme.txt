@@ -119,6 +119,13 @@ From testing on a Divi 4 and a Divi 5 site on Kinsta.
   visitors; the pixel still sets them in the browser. With pages cached,
   the plugin's server-side (Conversions API) events only fire on cache
   misses; browser pixel events are unaffected. The cookie list is editable.
+* Fixed: images whose class merely contained "skip-lazy" or "no-lazy",
+  such as Divi Supreme's dsm-skip-lazyload on every carousel and card
+  image, were loaded straight away. RC Rocket switches WordPress's own lazy
+  loading off, so they had none at all: a portfolio page downloaded 4 MB
+  (phone) to 7 MB (desktop) more before anyone scrolled. Those two
+  exclusions now match whole class names only; other exclusions (file
+  names, URL fragments) match anywhere, as before.
 * System check: "Home page served from cache" no longer names Cloudflare's
   __cf_bm cookie as the cause of a bypass. Cloudflare adds it at its edge,
   after the host has decided.

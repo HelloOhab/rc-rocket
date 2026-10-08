@@ -191,6 +191,38 @@ final class MediaModule implements Module {
 		);
 	}
 
+	/** Class conventions that only count as a whole class name. */
+	private const CLASS_EXCLUSIONS = [ 'skip-lazy', 'no-lazy' ];
+
+	/**
+	 * An exclusion matches anywhere in the tag (a file name, part of a
+	 * URL), except the skip-lazy/no-lazy conventions: those are class names,
+	 * and as plain text they also match other plugins' classes, such as
+	 * Divi Supreme's dsm-skip-lazyload, leaving hundreds of images with no
+	 * lazy loading at all, since WordPress's own is switched off here.
+	 *
+	 * @param array<int, mixed> $exclusions
+	 */
+	public static function excluded( string $attributes, array $exclusions ): bool {
+		foreach ( $exclusions as $needle ) {
+			$needle = (string) $needle;
+
+			if ( '' === $needle ) {
+				continue;
+			}
+
+			$hit = in_array( $needle, self::CLASS_EXCLUSIONS, true )
+				? (bool) preg_match( '#(?<![\w-])' . preg_quote( $needle, '#' ) . '(?![\w-])#i', $attributes )
+				: str_contains( $attributes, $needle );
+
+			if ( $hit ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	/** @var array<string, mixed>|null */
 	private ?array $dimension_cache = null;
 
@@ -252,10 +284,8 @@ final class MediaModule implements Module {
 					$attributes = substr( $attributes, 0, -strlen( $slash[0] ) );
 				}
 
-				foreach ( $exclusions as $needle ) {
-					if ( str_contains( $attributes, (string) $needle ) ) {
-						return $whole;
-					}
+				if ( self::excluded( $attributes, $exclusions ) ) {
+					return $whole;
 				}
 
 				++$seen;
