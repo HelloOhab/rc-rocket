@@ -149,4 +149,16 @@ ok( 'exclusions: no-lazy inside another class is not', ! RCRocket\Media\MediaMod
 ok( 'exclusions: file names still match anywhere', RCRocket\Media\MediaModule::excluded( ' src="/uploads/my-hero.jpg"', $ex ) );
 ok( 'exclusions: Divi menu logo class still matches', RCRocket\Media\MediaModule::excluded( ' class="et_pb_menu__logo-img"', $ex ) );
 
+// Divi is a theme, loaded after plugins: setup asked for at plugins_loaded
+// must wait for after_setup_theme instead of concluding Divi is absent.
+$GLOBALS['actions'] = [];
+$late_divi = new RCRocket\Integrations\Divi( new Logger( '/tmp/x.log', false ), [] );
+$ran       = 0;
+$late_divi->when_active( static function () use ( &$ran ) { ++$ran; } );
+ok( 'divi: nothing runs before the theme has loaded', 0 === $ran );
+ok( 'divi: setup waits for after_setup_theme', ! empty( $GLOBALS['actions']['after_setup_theme'] ) );
+define( 'ET_CORE_VERSION', '4.27.9' );   // the theme has now loaded
+foreach ( $GLOBALS['actions']['after_setup_theme'] as $cb ) { $cb(); }
+ok( 'divi: and runs once it has', 1 === $ran );
+
 report();

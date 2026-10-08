@@ -540,7 +540,14 @@ final class RestController {
 
 		$settings->merge( $payload );
 
-		if ( $settings->all() !== $before ) {
+		// Switching Safe mode on and off is not tuning: the level stays.
+		$tuning = static function ( array $all ): array {
+			unset( $all['general']['safe_mode'], $all['general']['preset'] );
+
+			return $all;
+		};
+
+		if ( $tuning( $settings->all() ) !== $tuning( $before ) ) {
 			$settings->set( \RCRocket\Support\Presets::OPTION_PATH, 'custom' );
 		}
 

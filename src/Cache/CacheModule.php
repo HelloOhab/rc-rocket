@@ -155,9 +155,7 @@ final class CacheModule implements Module {
 		/** @var Divi $divi */
 		$divi = $container->get( 'divi' );
 
-		if ( $divi->is_active() ) {
-			$divi->hooks();
-		}
+		$divi->when_active( [ $divi, 'hooks' ] );
 
 		// Warming runs in both modes: on a managed host it is the host's
 		// cache that gets warmed.

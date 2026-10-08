@@ -390,5 +390,202 @@
     );
   }
 
-  window.RCRocketPanels = { Preload: Preload, Housekeeping: Housekeeping, PresetBar: PresetBar, HeroDetection: HeroDetection };
+  // ------------------------------------------------------------- Easy view
+  //
+  // One page for people who manage a site but do not build it: is the site
+  // healthy, how hard should RC Rocket work, clear the cache, and what to do
+  // when something looks wrong. Every technical option is still one click
+  // away under Advanced.
+
+  var LEVELS = [
+    { name: 'safe', title: 'Careful', text: 'Speeds up images, fonts and caching, and never changes how a page behaves. Choose this if the site uses many plugins or something stopped working on a faster level.' },
+    { name: 'recommended', title: 'Recommended', text: 'The right choice for almost every Divi site. Also waits to load scripts until a visitor scrolls or taps. If visitors start seeing errors, RC Rocket switches itself back automatically and emails you.' },
+    { name: 'maximum', title: 'Fastest', text: 'Everything above and a few extra tricks. After switching, look through your main pages on a phone: popups, sticky headers and overlapping sections are the things to check.' }
+  ];
+
+  var STATUS_WORDS = { fail: 'Needs fixing', warn: 'Worth a look', pass: 'OK', info: 'Info' };
+
+  // What each check means for someone who does not build websites. The
+  // check's own text stays available under "Technical details".
+  var PLAIN = {
+    page_cache_hit: ['Pages are not being cached', 'Your host normally keeps a ready-made copy of each page so it opens instantly. Right now every visitor waits for the page to be built from scratch, which is slow.', 'Ask whoever looks after the site to check the technical details below. Often a tracking or cookie-banner plugin causes it.'],
+    kinsta_purge: ['RC Rocket cannot clear Kinsta\'s cache', 'After you change the design, visitors may keep seeing the old version for a while.', 'After design changes, clear the cache in MyKinsta as well, and ask Kinsta support to check their "MU plugin".'],
+    divi: ['Divi was not found', 'RC Rocket works best with the Divi theme. Without it, the Divi-specific speed features stay off.', 'Nothing to do if this site does not use Divi.'],
+    updates: ['Plugin updates', 'A newer version of RC Rocket may be available.', 'Update RC Rocket from Dashboard → Updates.'],
+    uploads: ['RC Rocket cannot save files', 'The uploads folder cannot be written to, so fonts and some speed features cannot work.', 'Ask your host to fix the permissions of the wp-content/uploads folder.'],
+    safe_mode: ['Safe mode is on', 'RC Rocket is not speeding up the site for visitors right now.', 'Once the problem that led to it is sorted, turn RC Rocket back on below.'],
+    modules: ['All speed features are off', 'Nothing is being optimized.', 'Choose a level below, such as Recommended.'],
+    fetch: ['RC Rocket cannot open your home page', 'To run these checks, RC Rocket visits your own home page, and that visit failed. Your site itself may be fine.', 'Ask your host whether "loopback requests" are blocked.'],
+    pipeline: ['Visitors are not getting the faster version', 'The home page came back without RC Rocket\'s changes.', 'Clear the whole cache below, then press "Check again".'],
+    beacon: ['Error reporting is not running', 'RC Rocket cannot notice if a page breaks for visitors, so the automatic safety switch cannot help.', 'Clear the whole cache below, then press "Check again".'],
+    animations: ['Many animations on the home page', 'Each animated element starts hidden until it plays, which makes the page feel slower, especially on phones.', 'Consider the Fastest level, or remove animations you do not need in Divi.'],
+    defer: ['Scripts are not being deferred', 'Scripts load in a way that holds up the page.', 'Choose the Recommended level below.'],
+    delay: ['Scripts are not being delayed', 'Scripts such as chat widgets and trackers load before the page is shown.', 'Choose the Recommended level below.'],
+    jquery: ['A common script is loading in the wrong order', 'jQuery, a script most plugins need, is not ready when the page expects it. This can break buttons, sliders or forms.', 'Pass the technical details below to whoever looks after the site.'],
+    lazy: ['Images load all at once', 'Images further down the page are downloaded before anyone scrolls to them.', 'Choose the Recommended level below.'],
+    lcp: ['The main image is not marked as most important', 'Browsers cannot tell which picture to load first, so the top of the page appears later.', 'Usually nothing to do on Divi: the main picture is often a section background, which RC Rocket handles separately.'],
+    video_poster: ['A background video has no still image', 'Until the video starts there is an empty space, and phones on slow connections may show nothing at all.', 'In Divi, give the same section a Background Image. RC Rocket uses it automatically.'],
+    video: ['A background video loads straight away', 'The video downloads before the rest of the page, which is heavy on phones.', 'In Divi, give the same section a Background Image. RC Rocket can then show it first.'],
+    video_source: ['A video is stored on another website', 'If that website changes or removes the file, the video disappears from your page.', 'Upload the video to your own Media Library and use that copy.'],
+    inventory: ['RC Rocket is still learning your pages', 'It records which files each page uses. This fills in by itself as people visit.', 'Nothing to do. It completes within a day of normal traffic.'],
+    fonts: ['Fonts still come from Google', 'Copying them to your own site failed, so every visit asks Google first.', 'Press "Check again" tomorrow. If it persists, pass the details on.'],
+    errors: ['Visitors saw errors in the last day', 'Something on the site is not working for some visitors.', 'Pass the technical details below to whoever looks after the site. The full list is under Advanced → Safety.'],
+    divi_perf: ['Some of Divi\'s speed options are off', 'Divi has its own speed settings, and they work well alongside RC Rocket.', 'In Divi → Theme Options → Performance, switch on the options listed below.'],
+  };
+
+  function Health(props) {
+    var resultState = useState(null);
+    var result = resultState[0], setResult = resultState[1];
+    var errorState = useState(null);
+    var error = errorState[0], setError = errorState[1];
+    var busyState = useState(false);
+    var busy = busyState[0], setBusy = busyState[1];
+
+    var run = function () {
+      setBusy(true);
+      setError(null);
+      props.api('/self-test')
+        .then(function (r) { setResult(r); })
+        .catch(function (e) { setError(e.message); })
+        .then(function () { setBusy(false); });
+    };
+
+    useEffect(run, []);
+
+    var open = result ? result.checks.filter(function (x) { return x.status === 'fail' || x.status === 'warn'; }) : [];
+    open.sort(function (x, y) { return (x.status === 'fail' ? 0 : 1) - (y.status === 'fail' ? 0 : 1); });
+
+    var headline = !result ? 'Checking your site…'
+      : result.summary.fail ? 'Something needs fixing'
+      : result.summary.warn ? 'Your site is fast, with ' + result.summary.warn + (result.summary.warn === 1 ? ' thing' : ' things') + ' worth a look'
+      : 'Everything is working';
+
+    return el('section', { className: 'rcr-easy__card rcr-easy__health is-' + (!result ? 'pending' : result.summary.fail ? 'fail' : result.summary.warn ? 'warn' : 'pass') },
+      el('div', { className: 'rcr-easy__head' },
+        el('h2', null, headline),
+        el(c.Button, { variant: 'secondary', isBusy: busy, disabled: busy, onClick: run }, busy ? 'Checking…' : 'Check again')
+      ),
+      error && el(c.Notice, { status: 'error', isDismissible: false }, 'The check could not run: ' + error),
+      result && el('p', { className: 'rcr-note' }, result.summary.pass + ' checks passed. ' + (open.length ? 'Here is what to look at, most important first:' : 'Nothing to do here.')),
+      open.length > 0 && el('ul', { className: 'rcr-easy__issues' },
+        open.slice(0, 6).map(function (x) {
+          var plain = PLAIN[x.id];
+
+          return el('li', { key: x.id + x.label, className: 'is-' + x.status },
+            el('span', { className: 'rcr-easy__tag' }, STATUS_WORDS[x.status]),
+            el('strong', null, plain ? plain[0] : x.label),
+            el('p', null, plain ? plain[1] : x.detail),
+            (plain ? plain[2] : x.fix) && el('p', { className: 'rcr-easy__fix' }, el('b', null, 'What to do: '), plain ? plain[2] : x.fix),
+            plain && el('details', { className: 'rcr-easy__details' },
+              el('summary', null, 'Technical details'),
+              el('p', null, x.label + ': ' + x.detail),
+              x.fix && el('p', null, x.fix)
+            )
+          );
+        })
+      ),
+      open.length > 6 && el('p', { className: 'rcr-note' }, (open.length - 6) + ' more under System check.')
+    );
+  }
+
+  function EasyHome(props) {
+    var current = (props.settings.general || {}).preset || 'custom';
+    var safeMode = !!(props.settings.general || {}).safe_mode;
+    var busyState = useState('');
+    var busy = busyState[0], setBusy = busyState[1];
+    var messageState = useState(null);
+    var message = messageState[0], setMessage = messageState[1];
+    var home = (window.RCRocketBoot || {}).siteUrl || '/';
+    var compare = home + (home.indexOf('?') === -1 ? '?' : '&') + 'rcr_safe=1';
+
+    var done = function (text) { setMessage({ status: 'success', text: text }); };
+    var failed = function (e) { setMessage({ status: 'error', text: e.message }); };
+
+    var level = function (name) {
+      setBusy('level-' + name);
+      props.api('/preset', { method: 'POST', data: { name: name } })
+        .then(function (r) { props.onApplied(r.settings); done('Done. RC Rocket now uses the ' + LEVELS.filter(function (l) { return l.name === name; })[0].title + ' level. Visitors see the change on their next page.'); })
+        .catch(failed)
+        .then(function () { setBusy(''); });
+    };
+
+    var clear = function () {
+      setBusy('clear');
+      Promise.resolve(props.onPurge('all'))
+        .then(function () { done('The cache is cleared. The next visit to each page builds a fresh copy.'); })
+        .catch(failed)
+        .then(function () { setBusy(''); });
+    };
+
+    var safe = function (on) {
+      setBusy('safe');
+      props.api('/settings', { method: 'POST', data: { general: { safe_mode: on } } })
+        .then(function (r) {
+          props.onApplied(r.settings);
+          done(on ? 'Safe mode is on: visitors get your site without any RC Rocket speed features. Turn it off again once the problem is sorted.' : 'Safe mode is off: RC Rocket is speeding up your site again.');
+        })
+        .catch(failed)
+        .then(function () { setBusy(''); });
+    };
+
+    return el('div', { className: 'rcr-easy' },
+      message && el(c.Notice, { status: message.status, onRemove: function () { setMessage(null); } }, message.text),
+      safeMode && el(c.Notice, { status: 'warning', isDismissible: false }, 'Safe mode is on, so RC Rocket is not speeding up your site right now.'),
+
+      el(Health, { api: props.api }),
+
+      el('section', { className: 'rcr-easy__card' },
+        el('h2', null, 'How hard should RC Rocket work?'),
+        current === 'custom' && el('p', { className: 'rcr-note' }, 'Someone has fine-tuned the settings by hand, so none of these is selected. Choosing one replaces those changes (your exclusions are kept).'),
+        props.dirty && el(c.Notice, { status: 'warning', isDismissible: false }, 'You have unsaved changes in Advanced. Save or discard them first.'),
+        el('div', { className: 'rcr-easy__levels' },
+          LEVELS.map(function (l) {
+            var active = l.name === current;
+            return el('div', { key: l.name, className: 'rcr-easy__level' + (active ? ' is-active' : '') },
+              el('strong', null, l.title, active ? ' (in use)' : ''),
+              el('p', null, l.text),
+              !active && el(c.Button, { variant: l.name === 'recommended' ? 'primary' : 'secondary', isBusy: busy === 'level-' + l.name, disabled: !!busy || props.dirty, onClick: function () { level(l.name); } }, 'Use ' + l.title)
+            );
+          })
+        )
+      ),
+
+      el('section', { className: 'rcr-easy__card' },
+        el('h2', null, 'Clear the cache'),
+        el('p', null, 'RC Rocket keeps ready-made copies of your pages so they open instantly. It refreshes a page by itself when you save it. Clear everything after changing something that appears on every page, such as the menu, header, footer or Divi Theme Options.'),
+        el(c.Button, { variant: 'primary', isBusy: busy === 'clear', disabled: !!busy, onClick: clear }, 'Clear the whole cache')
+      ),
+
+      el('section', { className: 'rcr-easy__card' },
+        el('h2', null, 'Something looks wrong on the site?'),
+        el('ol', { className: 'rcr-easy__steps' },
+          el('li', null,
+            el('strong', null, 'Find out whether RC Rocket is the cause. '),
+            'Open your home page with RC Rocket switched off, just for you: ',
+            el('a', { href: compare, target: '_blank', rel: 'noopener noreferrer' }, 'open without RC Rocket'),
+            '. To check another page, add ', el('code', null, '?rcr_safe=1'), ' to the end of its address. If it looks right that way, RC Rocket is involved.'
+          ),
+          el('li', null,
+            el('strong', null, 'Switch the speed features off for everyone while it gets fixed. '),
+            'Visitors then get the site exactly as it is without RC Rocket. Nothing is deleted, and you can switch back at any time.',
+            el('div', { className: 'rcr-easy__action' },
+              el(c.Button, { variant: safeMode ? 'primary' : 'secondary', isDestructive: !safeMode, isBusy: busy === 'safe', disabled: !!busy, onClick: function () { safe(!safeMode); } }, safeMode ? 'Turn RC Rocket back on' : 'Turn on Safe mode')
+            )
+          ),
+          el('li', null,
+            el('strong', null, 'Tell whoever looks after the site '),
+            'which page it was and what looked wrong. They will find the details under Advanced, in Safety.'
+          )
+        )
+      ),
+
+      el('p', { className: 'rcr-easy__more' },
+        'Every individual setting is under ',
+        el(c.Button, { variant: 'link', onClick: props.openAdvanced }, 'Advanced view'),
+        '.'
+      )
+    );
+  }
+
+  window.RCRocketPanels = { Preload: Preload, Housekeeping: Housekeeping, PresetBar: PresetBar, HeroDetection: HeroDetection, EasyHome: EasyHome };
 })();

@@ -101,7 +101,18 @@ final class DiviOptimizer {
 	}
 
 	public function hooks(): void {
-		if ( ! $this->applicable() || empty( $this->config['unload_modules'] ) ) {
+		if ( empty( $this->config['unload_modules'] ) ) {
+			return;
+		}
+
+		// Divi is a theme and loads after plugins: decide once it has.
+		if ( ! $this->divi->is_active() && ! did_action( 'after_setup_theme' ) ) {
+			add_action( 'after_setup_theme', [ $this, 'hooks' ], 0 );
+
+			return;
+		}
+
+		if ( ! $this->applicable() ) {
 			return;
 		}
 

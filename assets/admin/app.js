@@ -876,11 +876,18 @@
             help: "A safety net for visitors who never interact \u2014 and for Googlebot.",
           }),
         a.delay &&
+          wp.element.createElement(x, {
+            label: "Also delay Google Tag Manager and invisible reCAPTCHA",
+            help: "Google Tag Manager (and the Analytics and Ads tags it loads) and WPForms' invisible reCAPTCHA start at the visitor's first scroll, tap or keypress, or after the time above. On a phone this made the main image appear about 1.5 seconds sooner. Visitors who leave within those seconds without touching the page are not counted in Analytics.",
+            checked: a.delay_tracking !== !1,
+            onChange: i("delay_tracking"),
+          }),
+        a.delay &&
           d &&
           wp.element.createElement(
             ze,
             { status: "warning", isDismissible: !1 },
-            "Divi 4 detected. Inline scripts are never delayed on Divi 4 \u2014 its modules bootstrap inline against jQuery and delaying them breaks sliders, tabs and the mobile menu.",
+            "Divi 4 detected. Inline scripts are never delayed on Divi 4 (Google Tag Manager's snippet aside, when the option above is on) \u2014 its modules bootstrap inline against jQuery and delaying them breaks sliders, tabs and the mobile menu.",
           ),
         wp.element.createElement(J, {
           label: "Never defer or delay these",
@@ -1742,8 +1749,24 @@
   }
   var { useCallback: Je, useEffect: Qe, useState: z } = wp.element,
     { Button: Xe, TabPanel: Ye, Notice: Ze } = wp.components;
+  var view = () => {
+      try {
+        return window.localStorage.getItem("rcr-view") === "advanced" ? "advanced" : "easy";
+      } catch (g) {
+        return "easy";
+      }
+    },
+    keepView = (g) => {
+      try {
+        window.localStorage.setItem("rcr-view", g);
+      } catch (S) {}
+    };
   function se() {
-    let [t, n] = z(null),
+    let [V2, setV2] = z(view()),
+      showView = (g) => {
+        (setV2(g), keepView(g));
+      },
+      [t, n] = z(null),
       [s, a] = z(null),
       [i, l] = z(!1),
       [c, d] = z(!1),
@@ -1785,7 +1808,13 @@
       },
       p = s && s.hosting && s.hosting.page_cache,
       v = !s || !s.hosting || s.hosting.editable_server_config,
-      T = [
+      easy = V2 === "easy" && window.RCRocketPanels && window.RCRocketPanels.EasyHome,
+      T = easy
+        ? [
+            { name: "easy", title: "Home" },
+            { name: "check", title: "System check" },
+          ]
+        : [
         { name: "dashboard", title: "Overview" },
         { name: "assets", title: "Assets" },
         { name: "media", title: "Media" },
@@ -1797,7 +1826,7 @@
         { name: "check", title: "System check" },
       ];
     return (
-      v && T.push({ name: "server", title: "Server rules" }),
+      v && !easy && T.push({ name: "server", title: "Server rules" }),
       wp.element.createElement(
         "div",
         { className: "rcr-app" },
@@ -1821,17 +1850,32 @@
           wp.element.createElement(
             "div",
             { className: "rcr-header__actions" },
+            wp.element.createElement(
+              "div",
+              { className: "rcr-view", role: "group", "aria-label": "View" },
+              wp.element.createElement(
+                Xe,
+                { variant: easy ? "primary" : "secondary", onClick: () => showView("easy"), "aria-pressed": !!easy },
+                "Easy",
+              ),
+              wp.element.createElement(
+                Xe,
+                { variant: easy ? "secondary" : "primary", onClick: () => showView("advanced"), "aria-pressed": !easy },
+                "Advanced",
+              ),
+            ),
             i &&
               wp.element.createElement(
                 "span",
                 { className: "rcr-dirty" },
                 "Unsaved changes",
               ),
-            wp.element.createElement(
-              Xe,
-              { variant: "primary", isBusy: c, disabled: !i || c, onClick: y },
-              "Save changes",
-            ),
+            (!easy || i) &&
+              wp.element.createElement(
+                Xe,
+                { variant: "primary", isBusy: c, disabled: !i || c, onClick: y },
+                "Save changes",
+              ),
           ),
         ),
         h &&
@@ -1840,10 +1884,23 @@
             { status: "error", onRemove: () => u(null) },
             h,
           ),
-        wp.element.createElement(Ye, { className: "rcr-tabs", tabs: T }, (g) =>
+        wp.element.createElement(Ye, { key: easy ? "easy" : "advanced", className: "rcr-tabs", tabs: T }, (g) =>
           wp.element.createElement(
             "div",
             { className: "rcr-panel" },
+            g.name === "easy" &&
+              t &&
+              wp.element.createElement(window.RCRocketPanels.EasyHome, {
+                settings: t,
+                dirty: i,
+                api: C,
+                status: s,
+                onPurge: r,
+                onApplied: (S) => {
+                  (n(S), l(!1), f());
+                },
+                openAdvanced: () => showView("advanced"),
+              }),
             g.name === "dashboard" &&
               t &&
               window.RCRocketPanels &&

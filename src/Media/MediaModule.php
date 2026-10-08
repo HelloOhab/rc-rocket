@@ -140,13 +140,17 @@ final class MediaModule implements Module {
 			);
 		}
 
-		if ( $settings->enabled( 'media.lazy_backgrounds' ) && $container->get( 'divi' )->is_active() ) {
-			add_filter(
-				'rc-rocket/html',
-				static function ( string $html ): string {
-					return PageOptions::off( 'lazy_backgrounds' ) ? $html : ( new Backgrounds() )->rewrite( $html );
-				},
-				14
+		if ( $settings->enabled( 'media.lazy_backgrounds' ) ) {
+			$container->get( 'divi' )->when_active(
+				static function (): void {
+					add_filter(
+						'rc-rocket/html',
+						static function ( string $html ): string {
+							return PageOptions::off( 'lazy_backgrounds' ) ? $html : ( new Backgrounds() )->rewrite( $html );
+						},
+						14
+					);
+				}
 			);
 		}
 

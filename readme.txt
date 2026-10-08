@@ -111,6 +111,30 @@ Switch it off under Safety.
 
 = 0.12.1 =
 From testing on a Divi 4 and a Divi 5 site on Kinsta.
+* New: Easy view, the default screen. One page for people who manage a
+  site but do not build it: is the site healthy (System check results in
+  plain words, most important first, technical details folded away), how
+  hard RC Rocket should work (Careful, Recommended, Fastest), clear the
+  cache, and what to do when something looks wrong (open a page without
+  RC Rocket, switch Safe mode on and off). Advanced has every setting, as
+  before. The choice is remembered per person.
+* Fixed: on real sites every Divi-specific part of the cache module and
+  Divi background lazy loading never switched on. Modules start before
+  WordPress loads the theme, so Divi was never detected at that point.
+  Affected: the viewport fix (pinch-zoom, a Lighthouse accessibility
+  failure on both test sites), clearing the cache when a Divi layout,
+  Theme Builder template or Theme Options is saved, the form-nonce
+  refresh, lazy loading of Divi backgrounds, and unloading unused Divi
+  modules. They now start once the theme has loaded.
+* New: Google Tag Manager's snippet (and the Analytics and Ads tags it
+  loads) and WPForms' invisible reCAPTCHA v3 wait for the first
+  interaction, even on Divi (JavaScript tab, on by default). Measured on a
+  Divi 4 home page on a throttled phone: the largest paint 1.4 s sooner
+  for Tag Manager, 1.5 s with reCAPTCHA. Visitors who leave within the
+  delay timeout without touching the page are not counted in Analytics.
+  The reCAPTCHA v2 checkbox is left alone.
+* Switching Safe mode on or off no longer changes the optimization level
+  to Custom.
 * New: "Don't let tracking cookies block caching" (Cache tab, on by
   default). A page that sets a cookie from the server is never cached by
   Kinsta, WP Engine, Cloudflare or RC Rocket, and Meta Pixel for WordPress
