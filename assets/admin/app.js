@@ -780,7 +780,7 @@
         f.localize &&
           wp.element.createElement(A, {
             label: "Preload the font files",
-            help: "Requests the fonts alongside the stylesheet instead of after it.",
+            help: "Requests the fonts alongside the stylesheet instead of after it. Usually slower: the fonts swap in, so text never waits for them, and a preload takes bandwidth from the stylesheets and the hero image. Off by default.",
             checked: !!f.preload,
             onChange: (o) => n("assets", "fonts", { ...f, preload: o }),
           }),

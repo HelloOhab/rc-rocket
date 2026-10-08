@@ -126,6 +126,12 @@ From testing on a Divi 4 and a Divi 5 site on Kinsta.
   (phone) to 7 MB (desktop) more before anyone scrolled. Those two
   exclusions now match whole class names only; other exclusions (file
   names, URL fragments) match anywhere, as before.
+* Changed: font preloading is off by default, and existing sites move to
+  the new default (the setting stays under Assets, Fonts). Measured on a
+  throttled phone, preloading made the largest paint 330 ms later on a
+  Divi 4 home page and 450 ms later on a Divi 5 one, where it also delayed
+  the first paint: fonts swap in, so text never waits for them, and a
+  preload only takes bandwidth from the stylesheets and the hero image.
 * System check: "Home page served from cache" no longer names Cloudflare's
   __cf_bm cookie as the cause of a bypass. Cloudflare adds it at its edge,
   after the host has decided.

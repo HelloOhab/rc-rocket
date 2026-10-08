@@ -60,7 +60,7 @@ final class Presets {
 				'scan'      => true,
 				'fonts'     => [
 					'localize' => true,
-					'preload'  => true,
+					'preload'  => false,
 				],
 				'divi'      => [ 'unload_modules' => false ],
 				'bloat'     => [

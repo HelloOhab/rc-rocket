@@ -45,7 +45,7 @@ final class Plugin {
 	];
 
 	/** Settings schema version; migrate() brings older options up to it. */
-	public const SCHEMA = 8;
+	public const SCHEMA = 9;
 
 	private static ?self $instance = null;
 
@@ -190,6 +190,13 @@ final class Plugin {
 				$dropin->write_config( (array) $settings->get( 'cache', [] ) );
 				$dropin->refresh();
 			}
+		}
+
+		// 9: font preloading was on by default and measured slower (LCP
+		// 300-450 ms later on Divi 4 and Divi 5). Nobody chose the old
+		// value, so sites move to the new default; the toggle remains.
+		if ( $version < 9 && $version >= 1 ) {
+			$settings->set( 'assets.fonts.preload', false );
 		}
 
 		$settings->remove( 'general.auto_safe_mode_until' );
