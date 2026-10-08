@@ -118,6 +118,10 @@ final class DiviOptimizer {
 			return;
 		}
 
+		if ( \RCRocket\Support\PageOptions::off( 'divi_unload' ) ) {
+			return;
+		}
+
 		$modules = $this->modules_in_play();
 
 		// An empty result means detection failed, not that the page is empty.

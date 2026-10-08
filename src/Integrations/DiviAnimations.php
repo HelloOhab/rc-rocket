@@ -57,6 +57,11 @@ final class DiviAnimations {
 	private function css(): string {
 		$rules = [];
 
+		// Divi 4 marks animated modules with .et_animated; older builds and a
+		// few modules still use .et-waypoint. Divi adds .et-animated once the
+		// animation has run. Counters use .et-waypoint for something else.
+		$pending = '.et_animated:not(.et-animated),.et-waypoint:not(.et-animated):not(.et_pb_counters):not(.et_pb_circle_counter):not(.et_pb_number_counter)';
+
 		// The safety net. Always on when the module is: an element that never
 		// becomes visible is a worse failure than an animation that does not
 		// play, and this costs nothing when the waypoint does fire.
@@ -64,16 +69,16 @@ final class DiviAnimations {
 			$delay = max( 1, (int) ( $this->config['reveal_after'] ?? 3 ) );
 
 			$rules[] = sprintf(
-				'.et_pb_section.et-waypoint:not(.et-animated),.et_pb_row.et-waypoint:not(.et-animated),'
-				. '.et_pb_module.et-waypoint:not(.et-animated){opacity:1!important;animation-delay:0s!important}'
-				. '@keyframes rcr-reveal{to{opacity:1}}'
-				. '.et-waypoint:not(.et-animated){animation:rcr-reveal 0.01s linear %ds forwards}',
+				'@keyframes rcr-reveal{to{opacity:1}}%s{animation:rcr-reveal .01s linear %ds forwards}',
+				$pending,
 				$delay
 			);
 		}
 
-		$disable = 'html body .et_pb_section,html body .et_pb_row,html body .et_pb_module';
-		$neutral = '{animation:none!important;opacity:1!important;transform:none!important;transition:none!important}';
+		// Only elements that animate. Divi's own Transform settings (rotate,
+		// scale, offsets) live on the same modules and must survive.
+		$disable = '.et_animated,.et-waypoint:not(.et_pb_counters),[class*="et_pb_animation_"]';
+		$neutral = '{animation:none!important;opacity:1!important}';
 
 		if ( ! empty( $this->config['disable_on_mobile'] ) ) {
 			$breakpoint = max( 320, (int) ( $this->config['mobile_breakpoint'] ?? 980 ) );

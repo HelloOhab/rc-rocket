@@ -60,21 +60,34 @@ final class Video {
 		$divi_map  = $this->divi instanceof Divi && $this->divi->is_active()
 			? $this->divi->background_media_map()
 			: [];
-		$touched   = 0;
-		$has_gate  = false;
+		$touched      = 0;
+		$has_gate     = false;
+		$first_poster = '';
 
 		$result = preg_replace_callback(
 			self::SIGNATURE,
-			function ( array $m ) use ( $config, $poster, $divi_map, $html, &$touched, &$has_gate ): string {
+			function ( array $m ) use ( $config, $poster, $divi_map, $html, &$touched, &$has_gate, &$first_poster ): string {
 				$attributes = $m[1];
 				$inner      = $m[2];
 				$offset     = (int) strpos( $html, $m[0] );
 
-				if ( ! $this->is_background_video( $attributes ) && ! $this->in_divi_wrapper( $html, $offset ) ) {
+				$in_divi_bg = $this->in_divi_wrapper( $html, $offset );
+
+				// A video with controls is meant to be watched, whatever else it
+				// does. Never withhold it, on any screen. Divi 4 section
+				// backgrounds are the exception: they come from WordPress's
+				// video shortcode, which always emits controls="controls", and
+				// Divi hides them.
+				if ( ! $in_divi_bg && preg_match( '#(?<![\w-])controls\b#i', $attributes ) ) {
 					return $m[0];
 				}
 
-				if ( str_contains( $attributes, 'data-rcr-video' ) ) {
+				if ( ! $this->is_background_video( $attributes ) && ! $in_divi_bg ) {
+					return $m[0];
+				}
+
+				// Already handled, or explicitly left alone by the site.
+				if ( str_contains( $attributes, 'data-rcr-video' ) || preg_match( '#\b(skip-lazy|no-lazy|data-no-lazy|data-rcr-skip)\b#i', $attributes ) ) {
 					return $m[0];
 				}
 
@@ -86,11 +99,16 @@ final class Video {
 				// Divi already knows the fallback image for this video, because
 				// whoever built the page chose one. Prefer that over anything
 				// configured globally: it is per-section and always correct.
-				$fallback = '' !== $poster ? $poster : $this->divi_fallback( $attributes . $inner, $divi_map );
+				$section  = $this->divi_fallback( $attributes . $inner, $divi_map );
+				$fallback = '' !== $section ? $section : $poster;
 
 				if ( ! $has_poster && '' !== $fallback ) {
 					$attributes .= sprintf( ' poster="%s"', esc_url( $fallback ) );
 					$has_poster  = true;
+				}
+
+				if ( 1 === $touched && preg_match( '#\bposter\s*=\s*["\']([^"\']+)["\']#i', $attributes, $p ) ) {
+					$first_poster = html_entity_decode( $p[1] );
 				}
 
 				if ( ! empty( $config['preload_none'] ) ) {
@@ -99,8 +117,13 @@ final class Video {
 				}
 
 				// Withholding the video is only safe when a poster can stand in
-				// for it. Without one, leave Divi's behaviour alone.
-				if ( ! $has_poster ) {
+				// for it — and only when the site has asked for it. Divi sizes
+				// a background video to cover its section from the video's
+				// own dimensions; with the sources held back there are none,
+				// and the hero shrinks to a small frame in one corner. By
+				// default the video therefore loads exactly as Divi intends,
+				// and only gains a poster so something paints at once.
+				if ( ! $has_poster || empty( $config['withhold'] ) ) {
 					return '<video' . $attributes . '>' . $inner . '</video>';
 				}
 
@@ -128,15 +151,12 @@ final class Video {
 		}
 
 		// A poster that is about to become the LCP element deserves the same
-		// treatment as any other hero image.
-		if ( '' === $poster && $divi_map ) {
-			$poster = (string) ( reset( $divi_map ) ?: '' );
-		}
-
-		if ( '' !== $poster && ! empty( $config['preload_poster'] ) ) {
+		// treatment as any other hero image — but only the first video's, and
+		// only one this page actually uses.
+		if ( '' !== $first_poster && ! empty( $config['preload_poster'] ) ) {
 			$result = HtmlPipeline::after_head_start(
 				$result,
-				sprintf( '<link rel="preload" as="image" href="%s" fetchpriority="high">', esc_url( $poster ) )
+				sprintf( '<link rel="preload" as="image" href="%s" fetchpriority="high">', esc_url( $first_poster ) )
 			);
 		}
 
@@ -276,6 +296,11 @@ final class Video {
       sources[i].removeAttribute('data-rcr-src');
     }
 
+    // Divi 4 applies muted from JavaScript after the fact, and a browser will
+    // not autoplay a video it believes has sound.
+    video.muted = true;
+    video.setAttribute('muted', '');
+    video.setAttribute('playsinline', '');
     video.setAttribute('preload', 'auto');
     video.load();
 
@@ -286,8 +311,11 @@ final class Video {
     }
   }
 
+  var started = false;
+
   function start() {
-    if (!allowed()) return;   // Poster stays. Nothing is downloaded.
+    if (started || !allowed()) return;   // Poster stays. Nothing is downloaded.
+    started = true;
 
     if (!LAZY || !('IntersectionObserver' in window)) {
       for (var i = 0; i < videos.length; i++) activate(videos[i]);
@@ -314,8 +342,10 @@ final class Video {
   }
 
   // A visitor who rotates a phone into landscape crosses the width threshold.
+  var resizing;
   window.addEventListener('resize', function () {
-    if (allowed()) start();
+    clearTimeout(resizing);
+    resizing = setTimeout(start, 250);
   }, { passive: true });
 })();
 </script>
@@ -325,7 +355,8 @@ HTML;
 	public static function defaults(): array {
 		return [
 			'enabled'                 => true,
-			'preload_none'            => true,
+			'withhold'                => false,
+			'preload_none'            => false,
 			'preload_poster'          => true,
 			'lazy_until_visible'      => true,
 			'disable_below'           => 980,

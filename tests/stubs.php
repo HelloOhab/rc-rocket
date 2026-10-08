@@ -26,6 +26,7 @@ function remove_action( $h, $c, $p = 10 ) { return true; }
 function do_action( $h, ...$a ) { return null; }
 function apply_filters( $h, $v, ...$a ) { return $v; }
 function has_action( $h ) { return 0; }
+function did_action( $h ) { return 0; }
 function esc_url( $u ) { return htmlspecialchars( (string) $u, ENT_QUOTES ); }
 function esc_url_raw( $u ) { return (string) $u; }
 function esc_attr( $v ) { return htmlspecialchars( (string) $v, ENT_QUOTES ); }
@@ -59,6 +60,9 @@ function wp_mkdir_p( $d ) { return is_dir( $d ) || mkdir( $d, 0777, true ); }
 function wp_using_ext_object_cache() { return false; }
 function wp_next_scheduled( $h ) { return false; }
 function wp_schedule_event( ...$a ) { return true; }
+function wp_schedule_single_event( ...$a ) { return true; }
+function wp_clear_scheduled_hook( ...$a ) { return 0; }
+function content_url( $p = '' ) { return 'https://example.com/wp-content' . ( $p ? '/' . ltrim( $p, '/' ) : '' ); }
 function is_ssl() { return true; }
 function size_format( $b, $d = 0 ) { return $b . 'B'; }
 function human_time_diff( $a, $b ) { return '1 hour'; }

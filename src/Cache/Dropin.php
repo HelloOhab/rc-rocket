@@ -22,8 +22,26 @@ final class Dropin {
 
 	public function __construct( private string $cache_dir ) {}
 
+	public const SECRET_OPTION = 'rcrocket_preload_secret';
+
 	public function config_file(): string {
-		return $this->cache_dir . '/config.json';
+		return $this->cache_dir . '/config.php';
+	}
+
+	/**
+	 * Shared between the preloader and the drop-in, so a preload request can
+	 * prove it is ours. Without it the bypass header is a free cache-buster
+	 * for anyone who reads the source.
+	 */
+	public static function preload_secret(): string {
+		$secret = (string) get_option( self::SECRET_OPTION, '' );
+
+		if ( '' === $secret ) {
+			$secret = wp_generate_password( 32, false );
+			update_option( self::SECRET_OPTION, $secret, false );
+		}
+
+		return $secret;
 	}
 
 	public function dropin_file(): string {
@@ -39,20 +57,56 @@ final class Dropin {
 	 * because a stale config file is a cache that silently stops matching.
 	 */
 	public function write_config( array $cache_settings ): bool {
+		$defaults = Key::config_defaults();
+
+		// Only what the drop-in reads. Everything else stays in the database.
 		$config = array_merge(
-			Key::config_defaults(),
-			$cache_settings,
+			$defaults,
+			array_intersect_key( $cache_settings, $defaults ),
 			[
-				'cache_dir'  => $this->cache_dir,
-				'plugin_dir' => rtrim( RCROCKET_DIR, '/' ),
-				'home_url'   => home_url( '/' ),
-				'written'    => time(),
+				'cache_dir'      => $this->cache_dir,
+				'plugin_dir'     => rtrim( RCROCKET_DIR, '/' ),
+				'preload_secret' => self::preload_secret(),
+				'written'        => time(),
 			]
 		);
 
-		return Filesystem::atomic_write(
-			$this->config_file(),
-			(string) wp_json_encode( $config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES )
+		$php = "<?php\n// RC Rocket drop-in configuration. Generated; do not edit.\ndefined( 'ABSPATH' ) || exit;\n\nreturn "
+			. var_export( $config, true ) // phpcs:ignore WordPress.PHP.DevelopmentFunctions
+			. ";\n";
+
+		$written = Filesystem::atomic_write( $this->config_file(), $php );
+
+		$this->protect_directory();
+
+		// Earlier versions wrote a world-readable JSON copy.
+		if ( $written && file_exists( $this->cache_dir . '/config.json' ) ) {
+			@unlink( $this->cache_dir . '/config.json' ); // phpcs:ignore
+		}
+
+		if ( $written && function_exists( 'opcache_invalidate' ) ) {
+			@opcache_invalidate( $this->config_file(), true ); // phpcs:ignore
+		}
+
+		return $written;
+	}
+
+	/**
+	 * Apache only: refuse the bookkeeping files outright. Cached HTML has to
+	 * stay reachable because the generated rewrite rules serve it directly.
+	 * nginx ignores this file, which is why nothing secret is stored in a
+	 * format nginx would print.
+	 */
+	private function protect_directory(): void {
+		$file = $this->cache_dir . '/.htaccess';
+
+		if ( file_exists( $file ) ) {
+			return;
+		}
+
+		Filesystem::atomic_write(
+			$file,
+			"# RC Rocket\n<FilesMatch \"\\.(log|meta|php|json)\$\">\n\t<IfModule mod_authz_core.c>\n\t\tRequire all denied\n\t</IfModule>\n\t<IfModule !mod_authz_core.c>\n\t\tDeny from all\n\t</IfModule>\n</FilesMatch>\n"
 		);
 	}
 
@@ -73,7 +127,37 @@ final class Dropin {
 			return false;
 		}
 
-		$this->toggle_wp_cache( true );
+		if ( function_exists( 'opcache_invalidate' ) ) {
+			@opcache_invalidate( $this->dropin_file(), true ); // phpcs:ignore
+		}
+
+		// Without WP_CACHE the drop-in is never loaded: report it, rather
+		// than writing cache files nothing will ever serve.
+		return $this->toggle_wp_cache( true );
+	}
+
+	/**
+	 * The drop-in is copied once, at install. Bring an installed copy up to
+	 * date with the one this version ships.
+	 */
+	public function refresh(): bool {
+		if ( ! $this->is_ours() ) {
+			return false;
+		}
+
+		$source = @file_get_contents( $this->source_file() ); // phpcs:ignore
+
+		if ( ! is_string( $source ) || $source === @file_get_contents( $this->dropin_file() ) ) { // phpcs:ignore
+			return false;
+		}
+
+		if ( ! Filesystem::atomic_write( $this->dropin_file(), $source ) ) {
+			return false;
+		}
+
+		if ( function_exists( 'opcache_invalidate' ) ) {
+			@opcache_invalidate( $this->dropin_file(), true ); // phpcs:ignore
+		}
 
 		return true;
 	}
@@ -108,7 +192,27 @@ final class Dropin {
 	}
 
 	public function has_foreign_dropin(): bool {
-		return file_exists( $this->dropin_file() ) && ! $this->is_ours();
+		return file_exists( $this->dropin_file() ) && ! $this->is_ours() && ! $this->is_leftover();
+	}
+
+	/**
+	 * A drop-in nobody is using. WP Rocket empties its drop-in on
+	 * deactivation instead of deleting it, and an inactive WP Rocket's file
+	 * serves nothing. Treating either as "another plugin's cache" would leave
+	 * a site that switched from WP Rocket with no page cache at all.
+	 */
+	private function is_leftover(): bool {
+		$contents = @file_get_contents( $this->dropin_file() ); // phpcs:ignore
+
+		if ( ! is_string( $contents ) ) {
+			return false;
+		}
+
+		if ( '' === trim( (string) preg_replace( '/^<\?php\s*$/m', '', $contents ) ) ) {
+			return true;
+		}
+
+		return ! defined( 'WP_ROCKET_VERSION' ) && 1 === preg_match( '/WP[ _-]?Rocket/i', $contents );
 	}
 
 	private function wp_config_path(): ?string {
@@ -142,11 +246,44 @@ final class Dropin {
 		$contents = (string) preg_replace( '/^.*Added by RC Rocket.*$\R?/m', '', $contents );
 
 		if ( $enable ) {
-			if ( preg_match( '/define\s*\(\s*[\'"]WP_CACHE[\'"]/', $contents ) ) {
-				return true; // Host or another plugin already defines it.
+			// Already on for this request: whatever turns it on stays in charge.
+			if ( defined( 'WP_CACHE' ) && WP_CACHE ) {
+				return true;
 			}
 
-			$contents = (string) preg_replace( '/^<\?php\s*\R/', "<?php\n" . $marker, $contents, 1 );
+			// Live (uncommented) defines only.
+			$live = '/^[ \t]*define\s*\(\s*[\'"]WP_CACHE[\'"]\s*,\s*(\w+)\s*\)\s*;.*$/mi';
+
+			// A define whose value is an expression (getenv(), a cast) is not
+			// ours to rewrite, and a second define would only raise a warning.
+			if ( ! preg_match( $live, $contents ) && preg_match( '/^[ \t]*define\s*\(\s*[\'"]WP_CACHE[\'"]/mi', $contents ) ) {
+				return false;
+			}
+
+			if ( preg_match( $live, $contents, $define ) ) {
+				if ( 'false' !== strtolower( $define[1] ) ) {
+					return true; // Host or another plugin already turns it on.
+				}
+
+				// WP Rocket switches the cache off on its way out. That one is
+				// ours to turn back on; anyone else's "false" is deliberate.
+				if ( ! preg_match( '/WP[ _-]?Rocket/i', $define[0] ) ) {
+					return false;
+				}
+
+				$contents = (string) preg_replace( $live, rtrim( $marker ), $contents, 1 );
+
+				return false !== @file_put_contents( $path, $contents, LOCK_EX ); // phpcs:ignore
+			}
+
+			// After the opening tag, whether or not something shares its line.
+			$updated = (string) preg_replace( '/^<\?php\b[ \t]*\R?/', "<?php\n" . $marker, $contents, 1 );
+
+			if ( $updated === $contents ) {
+				return false;
+			}
+
+			$contents = $updated;
 		}
 
 		return false !== @file_put_contents( $path, $contents, LOCK_EX ); // phpcs:ignore

@@ -36,6 +36,11 @@ final class RestController {
 		add_action( 'rest_api_init', [ $this, 'register_routes' ] );
 		add_action( 'admin_post_rcrocket_purge_all', [ $this, 'handle_purge_all' ] );
 		add_action( 'admin_post_rcrocket_purge_url', [ $this, 'handle_purge_url' ] );
+		add_action( 'admin_post_rcrocket_purge_post', [ $this, 'handle_purge_post' ] );
+		add_filter( 'post_row_actions', [ $this, 'row_action' ], 10, 2 );
+		add_filter( 'page_row_actions', [ $this, 'row_action' ], 10, 2 );
+		add_action( 'admin_notices', [ $this, 'purged_notice' ] );
+		add_filter( 'removable_query_args', static fn( array $args ): array => array_merge( $args, [ 'rcrocket_purged' ] ) );
 	}
 
 	public function register_routes(): void {
@@ -200,6 +205,73 @@ final class RestController {
 			]
 		);
 
+		register_rest_route(
+			self::NAMESPACE,
+			'/preset',
+			[
+				[
+					'methods'             => 'GET',
+					'callback'            => [ $this, 'get_presets' ],
+					'permission_callback' => $manage,
+				],
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'apply_preset' ],
+					'permission_callback' => $manage,
+					'args'                => [
+						'name' => [
+							'type'     => 'string',
+							'required' => true,
+						],
+					],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/database',
+			[
+				[
+					'methods'             => 'GET',
+					'callback'            => [ $this, 'get_database' ],
+					'permission_callback' => $manage,
+				],
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'clean_database' ],
+					'permission_callback' => $manage,
+					'args'                => [
+						'items' => [
+							'type'     => 'array',
+							'items'    => [
+								'type' => 'string',
+								'enum' => [ 'revisions', 'auto_drafts', 'trashed_posts', 'spam_comments', 'trashed_comments', 'expired_transients', 'optimize_tables' ],
+							],
+							'required' => true,
+						],
+					],
+				],
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/lcp/measurements',
+			[
+				[
+					'methods'             => 'GET',
+					'callback'            => static fn() => rest_ensure_response( [ 'items' => \RCRocket\Media\Lcp::listing() ] ),
+					'permission_callback' => $manage,
+				],
+				[
+					'methods'             => 'DELETE',
+					'callback'            => [ $this, 'reset_lcp' ],
+					'permission_callback' => $manage,
+				],
+			]
+		);
+
 		// Public: refreshes Divi form nonces on cached pages. No capability
 		// check by design — a logged-out visitor needs a valid nonce too.
 		register_rest_route(
@@ -215,6 +287,64 @@ final class RestController {
 						'required' => true,
 					],
 				],
+			]
+		);
+	}
+
+	public function get_presets(): \WP_REST_Response {
+		return rest_ensure_response(
+			[
+				'presets' => \RCRocket\Support\Presets::catalogue(),
+				'current' => (string) $this->container->get( 'settings' )->get( \RCRocket\Support\Presets::OPTION_PATH, '' ),
+			]
+		);
+	}
+
+	public function apply_preset( \WP_REST_Request $request ) {
+		/** @var Settings $settings */
+		$settings = $this->container->get( 'settings' );
+		$name     = (string) $request->get_param( 'name' );
+
+		if ( ! \RCRocket\Support\Presets::apply( $settings, $name ) ) {
+			return new \WP_Error( 'rcrocket_unknown_preset', __( 'Unknown preset.', 'rc-rocket' ), [ 'status' => 400 ] );
+		}
+
+		return rest_ensure_response(
+			[
+				'applied'  => $name,
+				'settings' => $settings->all(),
+			]
+		);
+	}
+
+	public function get_database(): \WP_REST_Response {
+		/** @var \RCRocket\Database\DatabaseModule $database */
+		$database = $this->container->get( 'database' );
+
+		return rest_ensure_response(
+			[
+				'counts'   => $database->counts( (int) $this->container->get( 'settings' )->get( 'database.revisions_keep', 5 ) ),
+				'last_run' => $database->last_run(),
+				'next_run' => wp_next_scheduled( \RCRocket\Database\DatabaseModule::CRON_HOOK ) ?: null,
+			]
+		);
+	}
+
+	public function clean_database( \WP_REST_Request $request ): \WP_REST_Response {
+		/** @var \RCRocket\Database\DatabaseModule $database */
+		$database = $this->container->get( 'database' );
+		$settings = $this->container->get( 'settings' );
+
+		$removed = $database->run(
+			(array) $settings->get( 'database', [] ),
+			$this->container->get( 'logger' ),
+			array_map( 'strval', (array) $request->get_param( 'items' ) )
+		);
+
+		return rest_ensure_response(
+			[
+				'removed' => $removed,
+				'counts'  => $database->counts( (int) $settings->get( 'database.revisions_keep', 5 ) ),
 			]
 		);
 	}
@@ -304,7 +434,7 @@ final class RestController {
 		$baseline = (array) get_option( SafetyModule::BASELINE_OPTION, [] );
 
 		foreach ( $grouped as $key => $entry ) {
-			$grouped[ $key ]['baseline'] = isset( $baseline[ $key ] );
+			$grouped[ $key ]['baseline'] = SafetyModule::is_baseline( $baseline, (string) $key );
 			$grouped[ $key ]['own_site'] = self::is_own_site( (string) ( $entry['source'] ?? '' ) );
 			$grouped[ $key ]['counts']   = self::counts_toward_rollback( (array) $entry );
 		}
@@ -363,6 +493,18 @@ final class RestController {
 		);
 	}
 
+	/**
+	 * Forget every hero measurement. Cached pages no longer carry the
+	 * measuring script, so they are cleared for it to come back.
+	 */
+	public function reset_lcp(): \WP_REST_Response {
+		$removed = \RCRocket\Media\Lcp::reset();
+
+		\RCRocket\Plugin::instance()->purge_everything( 'manual' );
+
+		return rest_ensure_response( [ 'reset' => true, 'pages' => $removed ] );
+	}
+
 	public function can_manage(): bool {
 		return current_user_can( 'manage_options' );
 	}
@@ -393,7 +535,15 @@ final class RestController {
 
 		unset( $payload['general']['schema_version'] );
 
+		// Hand-tuned settings are no longer any preset.
+		$before = $settings->all();
+
 		$settings->merge( $payload );
+
+		if ( $settings->all() !== $before ) {
+			$settings->set( \RCRocket\Support\Presets::OPTION_PATH, 'custom' );
+		}
+
 		$settings->save();
 
 		return rest_ensure_response(
@@ -450,15 +600,11 @@ final class RestController {
 		$purge = $this->container->get( 'cache.purge' );
 
 		$deleted = match ( $scope ) {
-			'url'     => $purge->url( esc_url_raw( $value ) ),
+			'url'     => \RCRocket\Plugin::instance()->purge_url( esc_url_raw( $value ) ),
 			'key'     => $store->delete_by_key( sanitize_text_field( $value ) ),
 			'expired' => $store->purge_expired(),
-			default   => $store->flush(),
+			default   => \RCRocket\Plugin::instance()->purge_everything( 'manual' ),
 		};
-
-		if ( 'all' === $scope ) {
-			do_action( 'rc-rocket/cache/purged', 'all', $deleted );
-		}
 
 		return rest_ensure_response(
 			[
@@ -513,10 +659,11 @@ final class RestController {
 	}
 
 	public function nonces( \WP_REST_Request $request ): \WP_REST_Response {
-		$actions = array_filter( array_map( 'sanitize_text_field', explode( ',', (string) $request->get_param( 'actions' ) ) ) );
+		$allowed = Divi::refreshable_actions();
+		$actions = array_intersect( array_map( 'sanitize_text_field', explode( ',', (string) $request->get_param( 'actions' ) ) ), $allowed );
 		$out     = [];
 
-		foreach ( array_slice( $actions, 0, 20 ) as $action ) {
+		foreach ( array_slice( array_unique( $actions ), 0, 20 ) as $action ) {
 			$out[ $action ] = wp_create_nonce( $action );
 		}
 
@@ -531,12 +678,11 @@ final class RestController {
 	public function handle_purge_all(): void {
 		check_admin_referer( 'rcrocket_purge_all' );
 
-		if ( ! $this->can_manage() ) {
+		if ( ! \RCRocket\Plugin::can_purge_all() ) {
 			wp_die( esc_html__( 'You cannot clear the cache.', 'rc-rocket' ) );
 		}
 
-		$this->container->get( 'cache.store' )->flush();
-		do_action( 'rc-rocket/cache/purged', 'all', 0 );
+		\RCRocket\Plugin::instance()->purge_everything( 'manual' );
 
 		wp_safe_redirect( wp_get_referer() ?: admin_url() );
 		exit;
@@ -545,17 +691,91 @@ final class RestController {
 	public function handle_purge_url(): void {
 		check_admin_referer( 'rcrocket_purge_url' );
 
-		if ( ! $this->can_manage() ) {
+		if ( ! \RCRocket\Plugin::can_purge_page() ) {
 			wp_die( esc_html__( 'You cannot clear the cache.', 'rc-rocket' ) );
 		}
 
 		$url = isset( $_GET['url'] ) ? esc_url_raw( rawurldecode( wp_unslash( (string) $_GET['url'] ) ) ) : '';
 
+		// Only this site's pages: the link is built from the current request,
+		// and anything else is someone editing the query string.
+		if ( '' !== $url && wp_validate_redirect( $url, '' ) !== $url ) {
+			$url = '';
+		}
+
 		if ( '' !== $url ) {
-			$this->container->get( 'cache.purge' )->url( $url );
+			\RCRocket\Plugin::instance()->purge_url( $url );
 		}
 
 		wp_safe_redirect( $url ?: ( wp_get_referer() ?: admin_url() ) );
 		exit;
+	}
+
+	public function handle_purge_post(): void {
+		$post_id = isset( $_GET['post'] ) ? absint( $_GET['post'] ) : 0;
+
+		check_admin_referer( 'rcrocket_purge_post_' . $post_id );
+
+		if ( ! $post_id || ! \RCRocket\Plugin::can_purge_page() || ! current_user_can( 'edit_post', $post_id ) ) {
+			wp_die( esc_html__( 'You cannot clear the cache.', 'rc-rocket' ) );
+		}
+
+		\RCRocket\Plugin::instance()->purge_post( $post_id );
+
+		wp_safe_redirect( add_query_arg( 'rcrocket_purged', $post_id, wp_get_referer() ?: admin_url( 'edit.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * "Clear cache" under each published post in the list, next to "View".
+	 *
+	 * @param array<string, string> $actions
+	 */
+	public function row_action( array $actions, \WP_Post $post ): array {
+		if ( 'publish' !== $post->post_status || ! is_post_type_viewable( $post->post_type ) ) {
+			return $actions;
+		}
+
+		if ( ! \RCRocket\Plugin::can_purge_page() || ! current_user_can( 'edit_post', $post->ID ) ) {
+			return $actions;
+		}
+
+		$actions['rcrocket_purge'] = sprintf(
+			'<a href="%s">%s</a>',
+			esc_url(
+				wp_nonce_url(
+					add_query_arg(
+						[
+							'action' => 'rcrocket_purge_post',
+							'post'   => $post->ID,
+						],
+						admin_url( 'admin-post.php' )
+					),
+					'rcrocket_purge_post_' . $post->ID
+				)
+			),
+			esc_html__( 'Clear cache', 'rc-rocket' )
+		);
+
+		return $actions;
+	}
+
+	public function purged_notice(): void {
+		$post_id = isset( $_GET['rcrocket_purged'] ) ? absint( $_GET['rcrocket_purged'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification
+
+		if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+			return;
+		}
+
+		printf(
+			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+			esc_html(
+				sprintf(
+					/* translators: %s: post title */
+					__( 'Cache cleared for "%s".', 'rc-rocket' ),
+					get_the_title( $post_id )
+				)
+			)
+		);
 	}
 }

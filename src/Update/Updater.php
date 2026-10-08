@@ -126,7 +126,15 @@ final class Updater {
 	private function from_manifest(): ?array {
 		$url = $this->manifest_url();
 
+		// Whatever this returns is installed on every site that polls it.
+		// Plain HTTP would let anyone on the path choose the code.
 		if ( '' === $url ) {
+			return null;
+		}
+
+		if ( ! str_starts_with( strtolower( $url ), 'https://' ) ) {
+			$this->logger->error( 'Update manifest URL is not HTTPS; update checks are off until it is', [ 'url' => $url ] );
+
 			return null;
 		}
 
@@ -140,6 +148,12 @@ final class Updater {
 
 		if ( ! is_array( $data ) || empty( $data['version'] ) || empty( $data['download_url'] ) ) {
 			$this->logger->error( 'Update manifest is missing version or download_url', [ 'url' => $url ] );
+
+			return null;
+		}
+
+		if ( ! str_starts_with( strtolower( (string) $data['download_url'] ), 'https://' ) ) {
+			$this->logger->error( 'Update package is not served over HTTPS; ignored', [ 'url' => $url ] );
 
 			return null;
 		}
@@ -202,16 +216,34 @@ final class Updater {
 
 	private function fetch( string $url, bool $binary = false ): ?string {
 		$args = [
-			'timeout'    => 20,
+			'timeout'    => 10,
 			'user-agent' => 'RCRocket/' . $this->version . '; ' . home_url( '/' ),
 			'headers'    => [ 'Accept' => $binary ? 'application/octet-stream' : 'application/json' ],
 		];
 
-		if ( '' !== $this->token() && str_contains( $url, 'github.com' ) ) {
+		// The token goes to GitHub and nowhere else, however the URL is dressed.
+		$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+
+		$authorized = '' !== $this->token() && in_array( $host, [ 'api.github.com', 'github.com' ], true );
+
+		if ( $authorized ) {
 			$args['headers']['Authorization'] = 'Bearer ' . $this->token();
+
+			// GitHub answers an asset download with a redirect to signed
+			// storage, which rejects a request carrying a second credential.
+			// Follow it by hand, without the token.
+			$args['redirection'] = 0;
 		}
 
 		$response = wp_remote_get( $url, $args );
+
+		if ( $authorized && ! is_wp_error( $response ) && in_array( (int) wp_remote_retrieve_response_code( $response ), [ 301, 302, 303, 307, 308 ], true ) ) {
+			$location = (string) wp_remote_retrieve_header( $response, 'location' );
+
+			unset( $args['headers']['Authorization'], $args['redirection'] );
+
+			$response = '' === $location ? $response : wp_remote_get( $location, $args );
+		}
 
 		if ( is_wp_error( $response ) ) {
 			$this->logger->error( 'Update check failed', [ 'error' => $response->get_error_message() ] );
@@ -222,7 +254,7 @@ final class Updater {
 		$code = wp_remote_retrieve_response_code( $response );
 
 		if ( 200 !== $code ) {
-			$this->logger->error( 'Update check returned an unexpected status', [ 'status' => $code, 'url' => $url ] );
+			$this->logger->error( 'Update check returned an unexpected status', [ 'status' => $code, 'url' => (string) strtok( $url, '?' ) ] );
 
 			return null;
 		}
@@ -235,6 +267,14 @@ final class Updater {
 	public function inject( mixed $transient ): mixed {
 		if ( ! is_object( $transient ) ) {
 			return $transient;
+		}
+
+		// Updates come from us only. The slug is not reserved on
+		// wordpress.org, so an entry from there would be someone else's
+		// plugin of the same name. "Update URI" in the header already stops
+		// core asking; this covers sites where something re-adds it.
+		if ( isset( $transient->response ) && is_array( $transient->response ) ) {
+			unset( $transient->response[ $this->basename() ] );
 		}
 
 		$release = $this->remote();
@@ -301,7 +341,7 @@ final class Updater {
 	 * here with the auth header and hand WordPress a local file.
 	 */
 	public function download_private( mixed $reply, string $package, mixed $upgrader, array $hook_extra = [] ): mixed {
-		if ( '' === $this->token() || ! str_contains( $package, 'api.github.com' ) ) {
+		if ( '' === $this->token() || 'api.github.com' !== strtolower( (string) wp_parse_url( $package, PHP_URL_HOST ) ) ) {
 			return $reply;
 		}
 
@@ -354,13 +394,15 @@ final class Updater {
 		}
 
 		/**
-		 * Off by default. A plugin that rewrites every page on 30 client sites
-		 * should reach them because someone decided it should, not because a
-		 * tag was pushed.
+		 * The per-plugin toggle on the Plugins screen decides, as it does for
+		 * every other plugin; it is off until someone turns it on. Return a
+		 * bool here to force it either way across a fleet.
 		 *
-		 * @param bool $enabled
+		 * @param bool|null $enabled
 		 */
-		return (bool) apply_filters( 'rc-rocket/update/auto', false );
+		$forced = apply_filters( 'rc-rocket/update/auto', null );
+
+		return null === $forced ? $update : (bool) $forced;
 	}
 
 	public function flush(): void {

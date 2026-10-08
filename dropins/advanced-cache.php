@@ -19,13 +19,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 ( static function (): void {
 
-	$config_file = WP_CONTENT_DIR . '/cache/rc-rocket/config.json';
+	// The kill switch in wp-config.php has to reach cached pages too, or it
+	// is not a kill switch.
+	if ( defined( 'RC_ROCKET_SAFE_MODE' ) && RC_ROCKET_SAFE_MODE ) {
+		return;
+	}
+
+	$cache_dir = defined( 'RC_ROCKET_CACHE_DIR' ) ? (string) RC_ROCKET_CACHE_DIR : WP_CONTENT_DIR . '/cache/rc-rocket';
+
+	// A PHP file rather than JSON: it holds the preload secret, and a PHP file
+	// requested over HTTP prints nothing.
+	$config_file = $cache_dir . '/config.php';
 
 	if ( ! is_readable( $config_file ) ) {
 		return;
 	}
 
-	$config = json_decode( (string) file_get_contents( $config_file ), true );
+	$config = include $config_file;
 
 	if ( ! is_array( $config ) || empty( $config['enabled'] ) ) {
 		return;
@@ -33,9 +43,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	$key_class = rtrim( (string) ( $config['plugin_dir'] ?? '' ), '/' ) . '/src/Cache/Key.php';
 
+	// The stored path is absolute. After a move to another server or folder
+	// it points nowhere (or at another install); the usual location is the
+	// best guess until settings are saved again.
+	if ( ! is_readable( $key_class ) ) {
+		$key_class = WP_CONTENT_DIR . '/plugins/rc-rocket/src/Cache/Key.php';
+	}
+
 	if ( ! is_readable( $key_class ) ) {
 		return;
 	}
+
+	// The same applies to the cache directory: this file found the config in
+	// $cache_dir, so that is where the cache is.
+	$config['cache_dir'] = $cache_dir;
 
 	require_once $key_class;
 
@@ -43,7 +64,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 	$cookies = $_COOKIE;
 
 	// A preload request wants a fresh render, not the copy it is replacing.
-	if ( ! empty( $server['HTTP_X_RC_ROCKET_PRELOAD'] ) ) {
+	// Only our own preloader knows the secret; anyone else sending the header
+	// is treated as a normal visitor, so it cannot be used to force renders.
+	$preload = (string) ( $server['HTTP_X_RC_ROCKET_PRELOAD'] ?? '' );
+	$secret  = (string) ( $config['preload_secret'] ?? '' );
+
+	if ( '' !== $preload && '' !== $secret && hash_equals( $secret, $preload ) ) {
 		define( 'RCROCKET_SERVE', 'preload' );
 
 		return;
@@ -72,8 +98,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	if ( ! is_readable( $paths['html'] ) || ! is_readable( $paths['meta'] ) ) {
 		define( 'RCROCKET_SERVE', 'miss' );
-		define( 'RCROCKET_HASH', $hash );
-		define( 'RCROCKET_VARIANT', $variant );
 
 		return;
 	}
@@ -82,8 +106,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	if ( ! is_array( $meta ) || ( (int) ( $meta['expires'] ?? 0 ) ) < time() ) {
 		define( 'RCROCKET_SERVE', 'expired' );
-		define( 'RCROCKET_HASH', $hash );
-		define( 'RCROCKET_VARIANT', $variant );
 
 		return;
 	}
@@ -93,10 +115,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 	$modified = (int) ( $meta['created'] ?? time() );
 	$etag     = '"' . substr( $hash, 0, 16 ) . '-' . $modified . '"';
 
+	// Replay the headers the page was rendered with (security headers set in
+	// PHP, Link hints) so a hit is indistinguishable from a miss.
+	// The first line of a name replaces whatever PHP set; later lines of the
+	// same name (several Link headers) are added rather than overwriting.
+	$replayed = [];
+
+	foreach ( (array) ( $meta['headers'] ?? [] ) as $line ) {
+		$name = strtolower( trim( (string) strstr( (string) $line, ':', true ) ) );
+
+		header( (string) $line, ! isset( $replayed[ $name ] ) );
+
+		$replayed[ $name ] = true;
+	}
+
 	header( 'Content-Type: text/html; charset=UTF-8' );
 	header( 'ETag: ' . $etag );
 	header( 'Last-Modified: ' . gmdate( 'D, d M Y H:i:s', $modified ) . ' GMT' );
-	header( 'Vary: Accept-Encoding, User-Agent' );
+	header( 'Vary: Accept-Encoding' . ( empty( $config['separate_mobile'] ) ? '' : ', User-Agent' ) );
 
 	if ( ! empty( $config['debug_headers'] ) ) {
 		header( 'X-RC-Rocket-Cache: HIT' );
@@ -116,7 +152,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	$accepts_gzip = str_contains( strtolower( (string) ( $server['HTTP_ACCEPT_ENCODING'] ?? '' ) ), 'gzip' );
 
-	if ( $accepts_gzip && is_readable( $paths['gz'] ) ) {
+	if ( $accepts_gzip && is_readable( $paths['gz'] ) && ! ini_get( 'zlib.output_compression' ) ) {
 		header( 'Content-Encoding: gzip' );
 		header( 'Content-Length: ' . (string) filesize( $paths['gz'] ) );
 		readfile( $paths['gz'] );

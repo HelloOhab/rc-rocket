@@ -53,9 +53,10 @@ ok( 'update: download filter ignores other packages',
 ok( 'update: folder fix ignores other plugins',
 	'/tmp/src/' === $u2->fix_folder_name( '/tmp/src/', '/tmp/', null, [ 'plugin' => 'other/other.php' ] ) );
 
-// Automatic updates are off unless explicitly enabled.
+// Automatic updates follow WordPress's own per-plugin toggle unless forced.
 $item = (object) [ 'plugin' => 'rc-rocket/rc-rocket.php' ];
-ok( 'update: auto update is off by default', false === $u2->allow_auto_update( true, $item ) );
+ok( 'update: auto update follows the plugin toggle',
+	false === $u2->allow_auto_update( false, $item ) && true === $u2->allow_auto_update( true, $item ) );
 
 $other_item = (object) [ 'plugin' => 'other/other.php' ];
 ok( 'update: auto update decision for others is untouched', 'keep' === $u2->allow_auto_update( 'keep', $other_item ) );

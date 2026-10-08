@@ -120,6 +120,36 @@ final class HtmlPipeline {
 		return substr( $html, 0, $position ) . $insert . substr( $html, $position );
 	}
 
+	/**
+	 * Swap out everything a tag rewrite must not reach — scripts, JSON,
+	 * <noscript>, <template>, <textarea>, <style> and comments — for inert
+	 * placeholders. An <img> inside a JavaScript string or a JSON value is
+	 * text, and adding attributes to it breaks the script. Undo with
+	 * unmask(). Returns the input unchanged if the document cannot be read.
+	 *
+	 * @return array{0:string, 1:array<string, string>}
+	 */
+	public static function mask( string $html ): array {
+		$kept   = [];
+		$masked = preg_replace_callback(
+			'#<!--.*?-->|<(script|noscript|template|textarea|style)\b[^>]*>.*?</\1\s*>#is',
+			static function ( array $m ) use ( &$kept ): string {
+				$key          = "\x1ARCR" . count( $kept ) . "\x1A";
+				$kept[ $key ] = $m[0];
+
+				return $key;
+			},
+			$html
+		);
+
+		return is_string( $masked ) ? [ $masked, $kept ] : [ $html, [] ];
+	}
+
+	/** @param array<string, string> $kept */
+	public static function unmask( string $html, array $kept ): string {
+		return $kept ? strtr( $html, $kept ) : $html;
+	}
+
 	/** Insert markup immediately after the opening <head>. */
 	public static function after_head_start( string $html, string $insert ): string {
 		$result = (string) preg_replace( '/(<head[^>]*>)/i', '$1' . str_replace( '$', '\$', $insert ), $html, 1 );

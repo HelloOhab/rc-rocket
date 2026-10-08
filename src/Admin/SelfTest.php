@@ -29,6 +29,9 @@ final class SelfTest {
 	private const FAIL = 'fail';
 	private const INFO = 'info';
 
+	/** Headers from the second front-page request, when the cache is warm. */
+	private array $front_headers = [];
+
 	public function __construct( private Container $container ) {}
 
 	public function run(): array {
@@ -37,6 +40,7 @@ final class SelfTest {
 
 		$checks = array_merge(
 			$this->environment_checks(),
+			$this->host_cache_checks(),
 			$this->state_checks( $settings ),
 			$this->delivery_checks( $markup, $settings ),
 			$this->media_checks( $markup, $settings ),
@@ -64,24 +68,95 @@ final class SelfTest {
 	 * visitor rather than an administrator with optimization skipped.
 	 */
 	private function fetch_front_page(): ?string {
-		$response = wp_remote_get(
-			home_url( '/' ),
-			[
-				'timeout'    => 20,
-				'sslverify'  => false,
-				'cookies'    => [],
-				'user-agent' => 'Mozilla/5.0 (compatible; RCRocketSelfTest/1.0)',
-				'headers'    => [ 'Accept' => 'text/html' ],
-			]
-		);
+		$args = [
+			'timeout'    => 20,
+			'sslverify'  => (bool) apply_filters( 'rc-rocket/preload/sslverify', true ),
+			'cookies'    => [],
+			'user-agent' => 'Mozilla/5.0 (compatible; RCRocketSelfTest/1.0)',
+			'headers'    => [ 'Accept' => 'text/html' ],
+		];
+
+		// Twice: the first request may be the one that fills the cache, so
+		// only the second says whether pages are being served from it.
+		$response = wp_remote_get( home_url( '/' ), $args );
+
+		if ( ! is_wp_error( $response ) ) {
+			$second   = wp_remote_get( home_url( '/' ), $args );
+			$response = is_wp_error( $second ) ? $response : $second;
+		}
 
 		if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
 			return null;
 		}
 
+		$this->front_headers = array_change_key_case( (array) wp_remote_retrieve_headers( $response )->getAll(), CASE_LOWER );
+
 		$body = (string) wp_remote_retrieve_body( $response );
 
 		return '' === $body ? null : $body;
+	}
+
+	/**
+	 * Is the cache in front of this site actually answering? On a managed
+	 * host that is the host's cache, read from the header it adds.
+	 */
+	private function host_cache_checks(): array {
+		$hosting = $this->container->get( 'hosting' );
+		$report  = $hosting->report();
+		$checks  = [];
+
+		if ( 'kinsta' === $report['id'] ) {
+			$checks[] = $this->check(
+				'kinsta_purge',
+				'Kinsta purge connection',
+				$report['purge_api'] ? self::PASS : self::FAIL,
+				$report['purge_api']
+					? 'Divi Theme Options, Theme Builder templates and RC Rocket settings clear the Kinsta cache automatically.'
+					: 'The Kinsta MU plugin was not found, so global changes cannot clear the Kinsta cache.',
+				$report['purge_api'] ? '' : 'Clear the cache from MyKinsta after design changes, and ask Kinsta support to check the MU plugin.'
+			);
+		}
+
+		$header = $this->front_headers['x-kinsta-cache'] ?? $this->front_headers['x-rc-rocket-cache'] ?? $this->front_headers['x-cache'] ?? '';
+		$header = is_array( $header ) ? (string) reset( $header ) : (string) $header;
+
+		if ( '' === $header ) {
+			return $checks;
+		}
+
+		$state = strtoupper( $header );
+
+		// Name the thing that made the host skip its cache.
+		$why = [];
+
+		foreach ( (array) ( $this->front_headers['set-cookie'] ?? [] ) as $cookie ) {
+			$name = trim( (string) strtok( (string) $cookie, '=' ) );
+
+			if ( '' !== $name ) {
+				$why[] = 'sets the cookie ' . $name;
+			}
+		}
+
+		$control = $this->front_headers['cache-control'] ?? '';
+		$control = is_array( $control ) ? implode( ', ', $control ) : (string) $control;
+
+		if ( preg_match( '#no-cache|no-store|private|max-age=0#i', $control ) ) {
+			$why[] = 'sends Cache-Control: ' . $control;
+		}
+
+		$checks[] = $this->check(
+			'page_cache_hit',
+			'Home page served from cache',
+			str_contains( $state, 'HIT' ) || 'SERVER' === $state ? self::PASS : ( str_contains( $state, 'BYPASS' ) ? self::WARN : self::INFO ),
+			sprintf( 'The page cache answered %s on a repeat request.', $state ),
+			str_contains( $state, 'BYPASS' )
+				? ( $why
+					? 'The home page ' . implode( ' and ', array_unique( $why ) ) . '. Find the plugin responsible (a session, a consent banner, a form plugin) and stop it doing that for visitors who are not logged in.'
+					: 'Nothing in the response explains it. Kinsta also skips its cache when caching is switched off for the environment: staging sites often have it off. Check MyKinsta → Caching for this environment.' )
+				: ''
+		);
+
+		return $checks;
 	}
 
 	// ------------------------------------------------------------ environment
@@ -285,7 +360,103 @@ final class SelfTest {
 			);
 		}
 
+		$jquery = $this->jquery_check( $markup );
+
+		if ( null !== $jquery ) {
+			$checks[] = $jquery;
+		}
+
 		return $checks;
+	}
+
+	/**
+	 * "jQuery(...).on is not a function" means code ran while jQuery was a
+	 * stand-in or not there yet: jQuery was deferred (by Divi's "Defer
+	 * jQuery And jQuery Migrate", another plugin, or a JavaScript exclusion
+	 * removed here) while code in the page calls it during loading. Read
+	 * the page as visitors get it and say which.
+	 */
+	private function jquery_check( string $markup ): ?array {
+		if ( ! preg_match_all( '#<script\b([^>]*)>(.*?)</script>#is', $markup, $scripts, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+
+		$tag      = null;
+		$position = 0;
+		$inline   = [];
+
+		foreach ( $scripts as $script ) {
+			$attributes = $script[1][0];
+			$offset     = $script[0][1];
+
+			if ( null === $tag && preg_match( '#(?:src|data-rcr-src)\s*=\s*["\'][^"\']*/jquery(?:\.min)?\.js#i', $attributes ) ) {
+				$tag      = $attributes;
+				$position = $offset;
+				continue;
+			}
+
+			// Inline JavaScript only: not data blocks, not our own.
+			if ( preg_match( '#(?<![\w-])src\s*=#i', $attributes ) || preg_match( '#type\s*=\s*["\']?(?!text/javascript|module)[^"\'\s>]+#i', $attributes ) || str_contains( $attributes, 'rcr-' ) ) {
+				continue;
+			}
+
+			$code = $script[2][0];
+
+			// Already waits for the page: a ready handler or DOMContentLoaded
+			// runs after a deferred jQuery has arrived.
+			if ( preg_match( '#(?:jQuery|\$)\s*\(\s*(?:function|\(|document\s*\)\s*\.ready)|addEventListener\s*\(\s*["\'](?:DOMContentLoaded|load)#', $code ) ) {
+				continue;
+			}
+
+			// Calls that need real jQuery while the page is loading: anything
+			// but handing a function to jQuery() or .ready(), which a
+			// stand-in can queue.
+			if ( preg_match( '#(?:jQuery|\$)\s*\(\s*(?!function|\(\s*\)\s*=>|\(\s*\$\s*\)\s*=>)[^)]*\)\s*\.(?!ready\b)\w+\s*\(#', $code ) ) {
+				$inline[] = $offset;
+			}
+		}
+
+		if ( null === $tag ) {
+			return $inline
+				? $this->check( 'jquery', 'jQuery loading', self::WARN, sprintf( 'jQuery is not loaded on the home page, but %d inline scripts call it.', count( $inline ) ), 'Something removed jQuery from this page. Check RC Rocket\'s asset rules and Divi\'s performance options.' )
+				: $this->check( 'jquery', 'jQuery loading', self::PASS, 'The home page does not load jQuery and nothing on it needs it.' );
+		}
+
+		$delayed  = str_contains( $tag, 'rcrocket/delayed' );
+		$deferred = (bool) preg_match( '#(?<![\w-])(defer|async)(?![\w-])#i', $tag );
+		$by_wp    = str_contains( $tag, 'data-wp-strategy' );
+
+		if ( $delayed ) {
+			return $this->check( 'jquery', 'jQuery loading', self::FAIL, 'jQuery is held back by Delay JavaScript, so everything that uses it waits or fails.', 'Add jquery.min.js back to the JavaScript exclusions (JavaScript tab), or reset the exclusions list.' );
+		}
+
+		if ( $deferred ) {
+			// Inline code anywhere runs during parsing, before a deferred jQuery.
+			$early = count( $inline );
+			$who   = $by_wp ? 'by RC Rocket or WordPress\'s script strategy' : 'by Divi ("Defer jQuery And jQuery Migrate") or another plugin';
+
+			if ( 0 === $early ) {
+				return $this->check( 'jquery', 'jQuery loading', self::PASS, sprintf( 'jQuery is deferred %s, and no inline code calls it during loading.', $who ) );
+			}
+
+			return $this->check(
+				'jquery',
+				'jQuery loading',
+				self::WARN,
+				sprintf( 'jQuery is deferred %s, but %d inline scripts call jQuery while the page is still loading. They get a stand-in without .on(), .hasClass() and the rest: "jQuery(...).on is not a function".', $who, $early ),
+				$by_wp
+					? 'Add jquery.min.js to the JavaScript exclusions (JavaScript tab) so it loads normally.'
+					: 'In Divi → Theme Options → Performance, switch off "Defer jQuery And jQuery Migrate". RC Rocket already defers everything that can safely wait.'
+			);
+		}
+
+		$before = count( array_filter( $inline, static fn( int $offset ): bool => $offset < $position ) );
+
+		if ( $before > 0 ) {
+			return $this->check( 'jquery', 'jQuery loading', self::WARN, sprintf( '%d inline scripts call jQuery before jQuery is loaded.', $before ), 'A plugin or code snippet prints jQuery code in the page head while jQuery loads in the footer. Move the snippet to the footer, or load it on DOMContentLoaded.' );
+		}
+
+		return $this->check( 'jquery', 'jQuery loading', self::PASS, 'jQuery loads normally, before every inline script that uses it.' );
 	}
 
 	// ------------------------------------------------------------------ media

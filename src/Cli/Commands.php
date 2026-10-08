@@ -63,8 +63,13 @@ final class Commands {
 		} elseif ( ! empty( $assoc['expired'] ) ) {
 			$count = $store->purge_expired();
 		} else {
-			$count = $store->flush();
-			do_action( 'rc-rocket/cache/purged', 'all', $count );
+			$count = \RCRocket\Plugin::instance()->purge_everything( 'manual' );
+
+			if ( $this->container->get( 'hosting' )->manages_page_cache() ) {
+				\WP_CLI::success( 'Purge forwarded to ' . $this->container->get( 'hosting' )->detect()['label'] . '.' );
+
+				return;
+			}
 		}
 
 		\WP_CLI::success( sprintf( 'Cleared %d cached %s.', $count, 1 === $count ? 'page' : 'pages' ) );
@@ -281,8 +286,12 @@ final class Commands {
 		}
 
 		$settings->set( 'general.safe_mode', 'on' === $state );
-		$settings->set( 'general.auto_safe_mode_until', 0 );
 		$settings->save();
+
+		// "Off" means off: an automatic rollback in progress goes too.
+		if ( 'off' === $state ) {
+			$this->container->get( 'safe_mode' )->release();
+		}
 
 		\WP_CLI::success( 'on' === $state ? 'Safe mode on. Nothing is being optimized.' : 'Safe mode off.' );
 	}

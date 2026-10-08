@@ -33,7 +33,7 @@ final class Purge {
 			add_action( $hook, [ $this, 'on_post_change' ], 10, 1 );
 		}
 
-		add_action( 'comment_post', [ $this, 'on_comment' ], 10, 3 );
+		add_action( 'comment_post', [ $this, 'on_new_comment' ], 10, 2 );
 		add_action( 'edit_comment', [ $this, 'on_comment' ], 10, 1 );
 		add_action( 'wp_set_comment_status', [ $this, 'on_comment' ], 10, 1 );
 		add_action( 'edited_term', [ $this, 'on_term_change' ], 10, 1 );
@@ -87,7 +87,17 @@ final class Purge {
 		}
 	}
 
-	public function on_comment( int|string $comment_id, mixed $approved = null, mixed $data = null ): void {
+	/**
+	 * A pending or spam comment changes nothing a visitor can see. Purging on
+	 * it would let a comment spammer keep the cache permanently cold.
+	 */
+	public function on_new_comment( int|string $comment_id, mixed $approved = null ): void {
+		if ( 1 === $approved || '1' === $approved ) {
+			$this->on_comment( $comment_id );
+		}
+	}
+
+	public function on_comment( int|string $comment_id ): void {
 		$comment = get_comment( (int) $comment_id );
 
 		if ( $comment instanceof \WP_Comment ) {
@@ -114,18 +124,14 @@ final class Purge {
 	}
 
 	public function url( string $url ): int {
-		$host    = (string) ( wp_parse_url( $url, PHP_URL_HOST ) ?: (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
-		$uri     = (string) ( wp_parse_url( $url, PHP_URL_PATH ) ?: '/' );
-		$deleted = 0;
+		$host = Key::host_from_url( $url ) ?: Key::host_from_url( home_url() );
+		$uri  = (string) ( wp_parse_url( $url, PHP_URL_PATH ) ?: '/' );
 
-		// A URL may exist in several variants; clear every bucket we generate.
-		foreach ( $this->variants() as $variant ) {
-			$hash = Key::hash( $host, $uri, $variant, $this->config );
+		// Every variant of a URL (scheme, device, cookie buckets) carries the
+		// same URL key, so one key purge clears them all.
+		$deleted = $this->store->delete_by_key( Key::url_key( $host, $uri ) );
 
-			if ( null !== $hash && $this->store->delete( $hash ) ) {
-				++$deleted;
-			}
-		}
+		do_action( 'rc-rocket/cache/purged', 'url', $deleted, $this->store->take_deleted_urls() );
 
 		return $deleted;
 	}
@@ -139,8 +145,10 @@ final class Purge {
 			$deleted          = $this->store->flush();
 			$this->queued_all = false;
 
+			$this->queued_keys = [];
+
 			$this->logger->debug( 'Full cache flush', [ 'entries' => $deleted ] );
-			do_action( 'rc-rocket/cache/purged', 'all', $deleted );
+			do_action( 'rc-rocket/cache/purged', 'all', $deleted, [] );
 
 			return $deleted;
 		}
@@ -159,37 +167,12 @@ final class Purge {
 
 		$this->queued_keys = [];
 
-		do_action( 'rc-rocket/cache/purged', 'keys', $deleted );
+		do_action( 'rc-rocket/cache/purged', 'keys', $deleted, $this->store->take_deleted_urls() );
 
 		return $deleted;
 	}
 
 	private function queue( string $key ): void {
 		$this->queued_keys[] = $key;
-	}
-
-	/**
-	 * Every variant string this install can produce, so a URL purge is total.
-	 *
-	 * @return string[]
-	 */
-	private function variants(): array {
-		$schemes = [ is_ssl() ? 'https' : 'http' ];
-		$devices = empty( $this->config['separate_mobile'] ) ? [ '' ] : [ 'desktop', 'mobile' ];
-		$out     = [];
-
-		foreach ( $schemes as $scheme ) {
-			foreach ( $devices as $device ) {
-				$parts = array_filter( [ $scheme, $device ] );
-
-				if ( ! empty( $this->config['cache_logged_in'] ) ) {
-					$parts[] = 'anon';
-				}
-
-				$out[] = implode( '|', $parts );
-			}
-		}
-
-		return $out;
 	}
 }

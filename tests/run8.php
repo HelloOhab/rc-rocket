@@ -57,6 +57,7 @@ ok( 'purge: automatic purges are not forwarded by default',
 	'every post save would flush the entire host cache' );
 
 ok( 'purge: an explicit purge is allowed once', $kinsta->can_purge_now() );
+$kinsta->mark_purged();
 ok( 'purge: a second purge inside the window is refused', ! $kinsta->can_purge_now(),
 	'a purge loop could keep the host cache permanently cold' );
 

@@ -44,7 +44,9 @@ final class Registry {
 
 		$index[ $signature ] = [
 			'seen'    => time(),
-			'url'     => esc_url_raw( home_url( (string) ( $_SERVER['REQUEST_URI'] ?? '/' ) ) ),
+			// REQUEST_URI already includes any subdirectory; home_url() would
+			// add it a second time.
+			'url'     => esc_url_raw( ( is_ssl() ? 'https://' : 'http://' ) . ( $_SERVER['HTTP_HOST'] ?? '' ) . ( $_SERVER['REQUEST_URI'] ?? '/' ) ), // phpcs:ignore
 			'scripts' => $this->collect( 'scripts' ),
 			'styles'  => $this->collect( 'styles' ),
 		];

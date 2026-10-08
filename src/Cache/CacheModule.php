@@ -7,8 +7,8 @@ use RCRocket\Container;
 use RCRocket\Contracts\Module;
 use RCRocket\Integrations\Divi;
 use RCRocket\Integrations\DiviSettings;
-use RCRocket\Support\Logger;
 use RCRocket\Support\Hosting;
+use RCRocket\Support\Paths;
 use RCRocket\Support\Settings;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,10 +17,31 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Module A — the cache engine.
+ *
+ * Two modes. On a self-managed host it is a full page cache. On a host that
+ * runs its own (Kinsta, WP Engine and the rest) it never caches a byte and
+ * becomes the bridge instead: it tells the host when a change it cannot see
+ * — a Divi theme option, a Theme Builder template, an RC Rocket setting — has
+ * made every cached page wrong, and then warms the host cache back up.
  */
 final class CacheModule implements Module {
 
 	public const CLEANUP_HOOK = 'rc-rocket/cache/cleanup';
+
+	/** Response headers worth replaying on a cache hit. */
+	private const REPLAY_HEADERS = [
+		'content-security-policy',
+		'content-security-policy-report-only',
+		'x-frame-options',
+		'x-content-type-options',
+		'referrer-policy',
+		'permissions-policy',
+		'strict-transport-security',
+		'cross-origin-opener-policy',
+		'cross-origin-embedder-policy',
+		'cross-origin-resource-policy',
+		'link',
+	];
 
 	private ?float $started = null;
 
@@ -41,12 +62,13 @@ final class CacheModule implements Module {
 				'preload_on_purge'   => true,
 				'preload_batch_size' => 8,
 				'preload_max_urls'   => 500,
+				'warm_after_publish' => true,
 				'footer_signature'   => true,
 				// Divi-specific.
-				'clear_divi_cache'    => true,
-				'refresh_form_nonces' => true,
-				'bypass_divi_builder' => true,
-				'fix_viewport'          => false,
+				'clear_divi_cache'      => true,
+				'refresh_form_nonces'   => true,
+				'bypass_divi_builder'   => true,
+				'fix_viewport'          => true,
 				'hard_clear_divi_cache' => false,
 			]
 		);
@@ -60,7 +82,7 @@ final class CacheModule implements Module {
 
 		$container->set(
 			'cache.dir',
-			static fn(): string => (string) apply_filters( 'rc-rocket/cache/dir', WP_CONTENT_DIR . '/cache/rc-rocket' )
+			static fn(): string => Paths::cache_dir()
 		);
 
 		$container->set(
@@ -100,7 +122,16 @@ final class CacheModule implements Module {
 
 		$container->set(
 			'cache.preloader',
-			static fn( Container $c ): Preloader => new Preloader( $c->get( 'cache.store' ), $c->get( 'logger' ), $c->get( 'cache.config' ) )
+			static fn( Container $c ): Preloader => new Preloader(
+				$c->get( 'logger' ),
+				$c->get( 'cache.config' ),
+				$c->get( 'hosting' )->manages_page_cache()
+			)
+		);
+
+		$container->set(
+			'cache.host_bridge',
+			static fn( Container $c ): HostBridge => new HostBridge( $c->get( 'hosting' ), $c->get( 'divi' ), $c->get( 'logger' ) )
 		);
 
 		$container->set(
@@ -118,28 +149,27 @@ final class CacheModule implements Module {
 		/** @var Hosting $hosting */
 		$hosting = $container->get( 'hosting' );
 
-		// On a host with server-level page caching, ours must not run at all.
-		// Purges still matter, so they are forwarded rather than dropped.
-		if ( $hosting->manages_page_cache() ) {
-			$this->boot_passthrough( $container, $hosting );
-
-			return;
-		}
-
-		/** @var Purge $purge */
-		$purge = $container->get( 'cache.purge' );
-		$purge->hooks();
-
-		/** @var Preloader $preloader */
-		$preloader = $container->get( 'cache.preloader' );
-		$preloader->hooks();
-
 		/** @var Divi $divi */
 		$divi = $container->get( 'divi' );
 
 		if ( $divi->is_active() ) {
 			$divi->hooks();
 		}
+
+		// Warming runs in both modes: on a managed host it is the host's
+		// cache that gets warmed.
+		$container->get( 'cache.preloader' )->hooks();
+
+		add_action( 'admin_bar_menu', [ $this, 'admin_bar' ], 100 );
+
+		// On a host with server-level page caching, ours must not run at all.
+		if ( $hosting->manages_page_cache() ) {
+			$container->get( 'cache.host_bridge' )->hooks();
+
+			return;
+		}
+
+		$container->get( 'cache.purge' )->hooks();
 
 		add_action(
 			'template_redirect',
@@ -154,111 +184,41 @@ final class CacheModule implements Module {
 		if ( ! wp_next_scheduled( self::CLEANUP_HOOK ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', self::CLEANUP_HOOK );
 		}
-
-		add_action( 'admin_bar_menu', [ $this, 'admin_bar' ], 100 );
-
-		// Keep the drop-in's view of the world in sync with the option.
-		add_action(
-			'rc-rocket/settings/saved',
-			static function ( array $settings ) use ( $container ): void {
-				$container->get( 'cache.dropin' )->write_config( (array) ( $settings['cache'] ?? [] ) );
-				$container->get( 'cache.purge' )->all();
-			}
-		);
-	}
-
-	/**
-	 * Managed-host mode: no buffering, no drop-in, no disk writes. RC Rocket
-	 * becomes the optimization layer and the purge coordinator, which is the
-	 * only configuration these hosts permit.
-	 */
-	private function boot_passthrough( Container $container, Hosting $hosting ): void {
-		/** @var Divi $divi */
-		$divi = $container->get( 'divi' );
-
-		if ( $divi->is_active() ) {
-			$divi->hooks();
-		}
-
-		$forward = static function ( bool $explicit ) use ( $container, $hosting ): void {
-			// Automatic content purges are the host's job and it already does
-			// them precisely. Ours is a full flush, so forwarding every post
-			// save would keep the cache permanently cold.
-			if ( ! $explicit && ! $hosting->should_forward_automatic_purges() ) {
-				return;
-			}
-
-			if ( ! $hosting->can_purge_now() ) {
-				return;
-			}
-
-			/** @var Divi $divi */
-			$divi = $container->get( 'divi' );
-
-			// Order matters. Divi's CSS must be invalidated first, then the page
-			// cache dropped, so no cached HTML is ever left pointing at a
-			// stylesheet that no longer exists.
-			if ( $divi->is_active() ) {
-				$divi->clear_et_cache( 'all', 0 );
-			}
-
-			$purged = $hosting->purge_host_cache();
-
-			$container->get( 'logger' )->debug(
-				'Forwarded purge to host',
-				[
-					'host'     => $hosting->id(),
-					'handled'  => $purged,
-					'explicit' => $explicit,
-				]
-			);
-		};
-
-		// Only an explicit purge reaches the host. Divi's asset cache is still
-		// invalidated on content changes, because that part is ours to own.
-		add_action( 'rc-rocket/purge/all', static fn() => $forward( true ), 10, 0 );
-
-		foreach ( [ 'rc-rocket/purge/key', 'rc-rocket/purge/url' ] as $hook ) {
-			add_action(
-				$hook,
-				static function () use ( $container ): void {
-					/** @var Divi $divi */
-					$divi = $container->get( 'divi' );
-
-					if ( $divi->is_active() ) {
-						$divi->clear_et_cache( 'all', 0 );
-					}
-				},
-				10,
-				0
-			);
-		}
-
-		add_action( 'admin_bar_menu', [ $this, 'admin_bar' ], 100 );
 	}
 
 	private function start_buffer( Container $container ): void {
-		/** @var Rules $rules */
-		$rules = $container->get( 'cache.rules' );
-
 		// Cheap pre-check. The authoritative one runs at flush time, when the
 		// full query context and the real status code are known.
 		if ( null !== Key::bypass_reason( $_SERVER, $_COOKIE, $container->get( 'cache.config' ) ) ) { // phpcs:ignore
 			return;
 		}
 
+		$rules         = $container->get( 'cache.rules' );
 		$this->started = microtime( true );
 
 		ob_start(
-			function ( string $html ) use ( $container, $rules ): string {
-				return $this->capture( $html, $container, $rules );
+			function ( string $html, int $phase = PHP_OUTPUT_HANDLER_FINAL ) use ( $container, $rules ): string {
+				// Something flushed the buffer part way through the page: this
+				// call sees a fragment, and caching the last fragment would
+				// store the end of the page as the whole page.
+				$whole = ( $phase & PHP_OUTPUT_HANDLER_START ) && ( $phase & PHP_OUTPUT_HANDLER_FINAL );
+
+				return $whole ? $this->capture( $html, $container, $rules ) : $html;
 			}
 		);
 	}
 
 	private function capture( string $html, Container $container, Rules $rules ): string {
-		if ( strlen( $html ) < 255 || ! str_contains( $html, '</html>' ) ) {
+		if ( strlen( $html ) < 255 || ! str_contains( $html, '</html>' ) || ! preg_match( '/<html[\s>]/i', $html ) ) {
 			return $html;
+		}
+
+		// A 200 that is not a page (a feed, a download, JSON) is never replayed
+		// as text/html.
+		foreach ( headers_list() as $header ) {
+			if ( 0 === stripos( $header, 'content-type:' ) && false === stripos( $header, 'text/html' ) ) {
+				return $html;
+			}
 		}
 
 		$reason = $rules->bypass_reason();
@@ -271,11 +231,9 @@ final class CacheModule implements Module {
 		$store   = $container->get( 'cache.store' );
 		$config  = (array) $container->get( 'cache.config' );
 		$variant = Key::variant( $_SERVER, $_COOKIE, $config ); // phpcs:ignore
-		$url     = $this->current_url();
 
 		/**
 		 * Last chance to rewrite markup before it is frozen into the cache.
-		 * The Divi integration hooks this to decouple form nonces from TTL.
 		 *
 		 * @param string $html
 		 */
@@ -284,11 +242,12 @@ final class CacheModule implements Module {
 		$signed = $this->maybe_sign( $html, 'MISS', $container );
 
 		$store->put(
-			$url,
+			$this->current_url(),
 			$signed,
 			$rules->surrogate_keys(),
 			(int) ( $config['ttl'] ?? 36000 ),
-			$variant
+			$variant,
+			$this->replayable_headers()
 		);
 
 		if ( ! headers_sent() && ! empty( $config['debug_headers'] ) ) {
@@ -298,17 +257,28 @@ final class CacheModule implements Module {
 		return $signed;
 	}
 
+	/** @return string[] */
+	private function replayable_headers(): array {
+		$out = [];
+
+		foreach ( headers_list() as $line ) {
+			$name = strtolower( trim( strstr( $line, ':', true ) ?: '' ) );
+
+			if ( in_array( $name, self::REPLAY_HEADERS, true ) ) {
+				$out[] = $line;
+			}
+		}
+
+		return $out;
+	}
+
 	/**
-	 * The URL being cached.
-	 *
-	 * home_url( add_query_arg( [] ) ) looks right and is wrong: REQUEST_URI
-	 * already contains the subdirectory, so home_url() doubles it on any install
-	 * that is not at the domain root. Build it from the request instead, which is
-	 * also what the drop-in does — and the two must agree exactly.
+	 * The URL being cached, built from the request exactly as the drop-in sees
+	 * it — host including any port, path including any subdirectory.
 	 */
 	private function current_url(): string {
 		$scheme = is_ssl() ? 'https://' : 'http://';
-		$host   = sanitize_text_field( (string) ( $_SERVER['HTTP_HOST'] ?? '' ) );
+		$host   = (string) preg_replace( '/[^A-Za-z0-9.\-:\[\]]/', '', (string) ( $_SERVER['HTTP_HOST'] ?? '' ) );
 		$uri    = (string) ( $_SERVER['REQUEST_URI'] ?? '/' );
 
 		return $scheme . $host . $uri;
@@ -334,7 +304,10 @@ final class CacheModule implements Module {
 	}
 
 	public function admin_bar( \WP_Admin_Bar $bar ): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		$all  = \RCRocket\Plugin::can_purge_all();
+		$page = ! is_admin() && \RCRocket\Plugin::can_purge_page();
+
+		if ( ! $all && ! $page ) {
 			return;
 		}
 
@@ -342,20 +315,22 @@ final class CacheModule implements Module {
 			[
 				'id'    => 'rcrocket',
 				'title' => 'RC Rocket',
-				'href'  => admin_url( 'admin.php?page=rcrocket' ),
+				'href'  => current_user_can( 'manage_options' ) ? admin_url( 'admin.php?page=' . \RCRocket\Admin\AdminMenu::SLUG ) : false,
 			]
 		);
 
-		$bar->add_node(
-			[
-				'id'     => 'rcrocket-purge-all',
-				'parent' => 'rcrocket',
-				'title'  => __( 'Clear all cached pages', 'rc-rocket' ),
-				'href'   => wp_nonce_url( admin_url( 'admin-post.php?action=rcrocket_purge_all' ), 'rcrocket_purge_all' ),
-			]
-		);
+		if ( $all ) {
+			$bar->add_node(
+				[
+					'id'     => 'rcrocket-purge-all',
+					'parent' => 'rcrocket',
+					'title'  => __( 'Clear all cached pages', 'rc-rocket' ),
+					'href'   => wp_nonce_url( admin_url( 'admin-post.php?action=rcrocket_purge_all' ), 'rcrocket_purge_all' ),
+				]
+			);
+		}
 
-		if ( ! is_admin() ) {
+		if ( $page ) {
 			$bar->add_node(
 				[
 					'id'     => 'rcrocket-purge-url',
@@ -365,7 +340,7 @@ final class CacheModule implements Module {
 						add_query_arg(
 							[
 								'action' => 'rcrocket_purge_url',
-								'url'    => rawurlencode( home_url( add_query_arg( [] ) ) ),
+								'url'    => rawurlencode( ( is_ssl() ? 'https://' : 'http://' ) . ( $_SERVER['HTTP_HOST'] ?? '' ) . ( $_SERVER['REQUEST_URI'] ?? '/' ) ), // phpcs:ignore
 							],
 							admin_url( 'admin-post.php' )
 						),

@@ -1,6 +1,6 @@
 name: Release
 
-# Tag a version and this builds it, tests it, and publishes the zip as a
+# Tag a version and this lints it, tests it, and publishes the zip as a
 # release asset. Attaching a real asset matters: GitHub's generated source
 # archive unpacks to a folder named repo-tag rather than rc-rocket, which
 # would install a second, deactivated copy of the plugin beside the first.
@@ -25,11 +25,6 @@ jobs:
         with:
           php-version: '8.1'
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
       - name: Check the tag matches the plugin header
         run: |
           TAG="${GITHUB_REF_NAME#v}"
@@ -52,16 +47,16 @@ jobs:
             php "$f" | tail -1
           done
 
-      - name: Build the admin app
-        run: |
-          npm install
-          npm run build
-
       - name: Package
         run: |
           mkdir -p dist/rc-rocket
+          # The admin (assets/admin/app.js, panels.js) is committed as plain
+          # JavaScript and shipped as is. admin-src/ predates that and must
+          # not be rebuilt over it.
           rsync -a --exclude node_modules --exclude dist --exclude .git \
-            --exclude .github --exclude package-lock.json ./ dist/rc-rocket/
+            --exclude .github --exclude .gitignore --exclude package.json \
+            --exclude package-lock.json --exclude admin-src --exclude tests \
+            --exclude deploy --exclude DOCUMENTATION.md ./ dist/rc-rocket/
           cd dist && zip -rq "rc-rocket-${VERSION}.zip" rc-rocket && rm -rf rc-rocket
 
       - name: Publish the release
