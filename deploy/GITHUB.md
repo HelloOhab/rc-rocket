@@ -32,6 +32,31 @@ and attaches the zip to the release.
 
 If any test fails, no release is published. That is the point.
 
+## Rolling out to the fleet
+
+Every release is published as a **pre-release**. Sites only see it if they
+are on the beta channel:
+
+```php
+define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );   // test sites only
+```
+
+1. Put two or three sites on the beta channel: at least one on Divi 4 and
+   one on Divi 5, ideally on different hosts. System check → Updates says
+   "Beta channel" on those sites.
+2. Tag the release. Update the beta sites (Dashboard → Updates, or
+   `wp rc-rocket version --flush` and then `wp plugin update rc-rocket`).
+3. Run `tools/compare` against several pages on each beta site. Fix every
+   FAIL, and look at every CHECK.
+4. Check the admin by hand on one site: settings save, cache clears, the
+   Divi builder opens and saves.
+5. Edit the release on GitHub and untick **Set as a pre-release**. It becomes
+   the latest release, and every other site is offered it within six hours.
+
+Releases are offered, not installed: a site only updates by itself if
+auto-updates are on for RC Rocket on its Plugins screen. To roll out in
+waves, leave auto-updates off and update a batch at a time.
+
 ## Public or private?
 
 **Private repository** means a token in `wp-config.php` on all 30 sites. Tokens

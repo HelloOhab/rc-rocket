@@ -213,9 +213,10 @@ final class SelfTest {
 				'updates',
 				'Updates',
 				$update['update'] ? self::WARN : self::PASS,
-				$update['update']
+				( $update['update']
 					? sprintf( 'Version %s is available. This site is on %s.', (string) $update['available'], $update['installed'] )
-					: sprintf( 'On %s, the latest available.', $update['installed'] )
+					: sprintf( 'On %s, the latest available.', $update['installed'] ) )
+					. ( 'beta' === ( $update['channel'] ?? 'stable' ) ? ' Beta channel: pre-releases are offered to this site.' : '' )
 			);
 		}
 

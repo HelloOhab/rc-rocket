@@ -4,6 +4,11 @@ name: Release
 # release asset. Attaching a real asset matters: GitHub's generated source
 # archive unpacks to a folder named repo-tag rather than rc-rocket, which
 # would install a second, deactivated copy of the plugin beside the first.
+#
+# Releases are published as pre-releases. Only sites with
+# RC_ROCKET_UPDATE_CHANNEL set to 'beta' see them. Once those sites check out
+# (tools/compare), edit the release on GitHub and untick "Set as a
+# pre-release": it becomes the latest release and every site is offered it.
 
 on:
   push:
@@ -56,7 +61,7 @@ jobs:
           rsync -a --exclude node_modules --exclude dist --exclude .git \
             --exclude .github --exclude .gitignore --exclude package.json \
             --exclude package-lock.json --exclude admin-src --exclude tests \
-            --exclude deploy --exclude DOCUMENTATION.md ./ dist/rc-rocket/
+            --exclude deploy --exclude tools --exclude DOCUMENTATION.md ./ dist/rc-rocket/
           cd dist && zip -rq "rc-rocket-${VERSION}.zip" rc-rocket && rm -rf rc-rocket
 
       - name: Publish the release
@@ -64,3 +69,4 @@ jobs:
         with:
           files: dist/rc-rocket-${{ env.VERSION }}.zip
           generate_release_notes: true
+          prerelease: true

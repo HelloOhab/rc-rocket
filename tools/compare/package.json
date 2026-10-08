@@ -1,0 +1,12 @@
+{
+  "name": "rc-rocket-compare",
+  "private": true,
+  "type": "module",
+  "description": "Loads pages with RC Rocket on and off (?rcr_safe=1) and reports the differences.",
+  "scripts": {
+    "compare": "node compare.mjs --sites sites.txt"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

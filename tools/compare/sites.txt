@@ -1,0 +1,8 @@
+# One URL per line. Test more than the home page: one page per template
+# (service page, blog post, contact/form page, a page with video or a slider).
+
+# Divi 5 (Kinsta staging)
+https://stg-rhythmcocom-rhythmc.kinsta.cloud/
+
+# Divi 4
+https://americanhomesiding.com/
