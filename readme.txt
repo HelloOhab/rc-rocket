@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.0
+Stable tag: 0.12.1
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,64 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.1 =
+From testing on a Divi 4 and a Divi 5 site on Kinsta.
+* New: Easy view, the default screen. One page for people who manage a
+  site but do not build it: is the site healthy (System check results in
+  plain words, most important first, technical details folded away), how
+  hard RC Rocket should work (Careful, Recommended, Fastest), clear the
+  cache, and what to do when something looks wrong (open a page without
+  RC Rocket, switch Safe mode on and off). Advanced has every setting, as
+  before. The choice is remembered per person.
+* Fixed: on real sites every Divi-specific part of the cache module and
+  Divi background lazy loading never switched on. Modules start before
+  WordPress loads the theme, so Divi was never detected at that point.
+  Affected: the viewport fix (pinch-zoom, a Lighthouse accessibility
+  failure on both test sites), clearing the cache when a Divi layout,
+  Theme Builder template or Theme Options is saved, the form-nonce
+  refresh, lazy loading of Divi backgrounds, and unloading unused Divi
+  modules. They now start once the theme has loaded.
+* New: Google Tag Manager's snippet (and the Analytics and Ads tags it
+  loads) and WPForms' invisible reCAPTCHA v3 wait for the first
+  interaction, even on Divi (JavaScript tab, on by default). Measured on a
+  Divi 4 home page on a throttled phone: the largest paint 1.4 s sooner
+  for Tag Manager, 1.5 s with reCAPTCHA. Visitors who leave within the
+  delay timeout without touching the page are not counted in Analytics.
+  The reCAPTCHA v2 checkbox is left alone.
+* Fixed: "Add missing width and height" skipped images linked with
+  http:// on an HTTPS site (a logo chosen before the move to HTTPS is the
+  usual case) and every image matching a lazy-load exclusion, which by
+  default includes Divi's menu logo. Both now get their size. The site's
+  own http:// image addresses are also rewritten to https:// on HTTPS
+  pages, which clears Lighthouse's "uses HTTPS" failure. The size cache is
+  rebuilt once.
+* Switching Safe mode on or off no longer changes the optimization level
+  to Custom.
+* New: "Don't let tracking cookies block caching" (Cache tab, on by
+  default). A page that sets a cookie from the server is never cached by
+  Kinsta, WP Engine, Cloudflare or RC Rocket, and Meta Pixel for WordPress
+  sets _fbp and _fbc that way on every page, so every visitor got an
+  uncached page. Those cookies are now removed from pages for logged-out
+  visitors; the pixel still sets them in the browser. With pages cached,
+  the plugin's server-side (Conversions API) events only fire on cache
+  misses; browser pixel events are unaffected. The cookie list is editable.
+* Fixed: images whose class merely contained "skip-lazy" or "no-lazy",
+  such as Divi Supreme's dsm-skip-lazyload on every carousel and card
+  image, were loaded straight away. RC Rocket switches WordPress's own lazy
+  loading off, so they had none at all: a portfolio page downloaded 4 MB
+  (phone) to 7 MB (desktop) more before anyone scrolled. Those two
+  exclusions now match whole class names only; other exclusions (file
+  names, URL fragments) match anywhere, as before.
+* Changed: font preloading is off by default, and existing sites move to
+  the new default (the setting stays under Assets, Fonts). Measured on a
+  throttled phone, preloading made the largest paint 330 ms later on a
+  Divi 4 home page and 450 ms later on a Divi 5 one, where it also delayed
+  the first paint: fonts swap in, so text never waits for them, and a
+  preload only takes bandwidth from the stylesheets and the hero image.
+* System check: "Home page served from cache" no longer names Cloudflare's
+  __cf_bm cookie as the cause of a bypass. Cloudflare adds it at its edge,
+  after the host has decided.
 
 = 0.12.0 =
 Fixes from a full review before rolling out to every site.

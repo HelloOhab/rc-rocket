@@ -68,6 +68,41 @@ final class JsModule implements Module {
 		return 'js';
 	}
 
+	/**
+	 * Scripts that are safe, and worth it, to hold until the visitor acts.
+	 *
+	 * Google Tag Manager's container snippet: it only creates the dataLayer
+	 * queue and adds gtm.js, which then loads Analytics and Ads tags.
+	 * Anything pushed to dataLayer before then is processed when it
+	 * arrives. Measured on a Divi 4 home page, a throttled phone: the
+	 * largest paint 1.4 s sooner.
+	 *
+	 * Invisible reCAPTCHA v3 (api.js?render=) as WPForms prints it, with its
+	 * inline "after" setup, which calls grecaptcha at once and so must move
+	 * with the file. v3 is only consulted on submit, and typing into the
+	 * form is itself an interaction. The v2 checkbox is left alone.
+	 *
+	 * @param array<string, mixed> $script
+	 */
+	public static function waits_for_visitor( array $script ): bool {
+		$attributes = (string) $script['attributes'];
+		$code       = (string) $script['code'];
+
+		if ( ! $script['src'] && str_contains( $code, 'googletagmanager.com/gtm.js' ) && str_contains( $code, 'gtm.start' ) ) {
+			return true;
+		}
+
+		if ( 'wpforms-recaptcha' === $script['handle'] ) {
+			if ( 'file' === $script['part'] ) {
+				return (bool) preg_match( '#google\.com/recaptcha/api\.js\?[^"\']*render=(?!explicit)#i', $attributes );
+			}
+
+			return 'after' === $script['part'];
+		}
+
+		return false;
+	}
+
 	public function label(): string {
 		return __( 'JavaScript', 'rc-rocket' );
 	}
@@ -78,6 +113,10 @@ final class JsModule implements Module {
 			'defer'              => true,
 			'delay'              => true,
 			'delay_timeout'      => 6,
+			// Google Tag Manager's container snippet and invisible reCAPTCHA
+			// v3 wait for the first interaction too, even on Divi sites,
+			// where other inline scripts never do.
+			'delay_tracking'     => true,
 			'exclusions'         => Presets::js_exclusions(),
 			// content-visibility clips anything that overlaps a section edge and
 			// re-anchors position:fixed children to the section. Opt-in.
@@ -236,6 +275,22 @@ final class JsModule implements Module {
 
 		$this->respect_dependencies( $scripts, $plan );
 
+		// reCAPTCHA's inline setup moves only together with its file (v3);
+		// for the v2 checkbox the file calls back into it straight away.
+		$recaptcha_file_delayed = false;
+
+		foreach ( $scripts as $i => $script ) {
+			if ( 'wpforms-recaptcha' === $script['handle'] && 'file' === $script['part'] && 'delay' === $plan[ $i ] ) {
+				$recaptcha_file_delayed = true;
+			}
+		}
+
+		foreach ( $scripts as $i => $script ) {
+			if ( 'wpforms-recaptcha' === $script['handle'] && 'file' !== $script['part'] && 'delay' === $plan[ $i ] && ! $recaptcha_file_delayed ) {
+				$plan[ $i ] = 'keep';
+			}
+		}
+
 		// Elsewhere inline scripts are delayed with everything else, in order.
 		// A file that stays on time needs its inline data and setup on time
 		// as well (wpforms_settings, wpcf7): run without them, it fails.
@@ -328,6 +383,10 @@ final class JsModule implements Module {
 		// document.write() run after the page has loaded replaces the page.
 		if ( preg_match( '#(?<![\w-])nomodule\b#i', $attributes ) || str_contains( $script['code'], 'document.write' ) ) {
 			return 'keep';
+		}
+
+		if ( $settings->enabled( 'js.delay_tracking' ) && self::waits_for_visitor( $script ) ) {
+			return 'delay';
 		}
 
 		// Menus and forms load normally: see INTERACTIVE.

@@ -55,6 +55,36 @@ final class Divi {
 		return defined( 'ET_CORE_VERSION' ) || defined( 'ET_BUILDER_VERSION' ) || function_exists( 'et_setup_theme' );
 	}
 
+	/**
+	 * Run $setup once it is known whether Divi is there, and only if it is.
+	 *
+	 * Modules boot at plugins_loaded, and Divi is a theme: WordPress loads
+	 * the theme after every plugin, so is_active() is false at that point on
+	 * every real site (the Divi Builder plugin aside). Asking then switched
+	 * off everything Divi-specific without a trace.
+	 */
+	public function when_active( callable $setup ): void {
+		if ( $this->is_active() ) {
+			$setup();
+
+			return;
+		}
+
+		if ( did_action( 'after_setup_theme' ) ) {
+			return;
+		}
+
+		add_action(
+			'after_setup_theme',
+			function () use ( $setup ): void {
+				if ( $this->is_active() ) {
+					$setup();
+				}
+			},
+			0
+		);
+	}
+
 	public function version(): ?string {
 		// Memoized: is_divi_five() resolves through here, and the script
 		// delayer asks it once per script tag. Without this, a page with forty

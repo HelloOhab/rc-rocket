@@ -3,7 +3,7 @@
  * Plugin Name:       RC Rocket
  * Plugin URI:        https://rhythmco.com/
  * Description:       Performance tuning built around Divi. Asset control, media delivery, JavaScript timing and a safety net that switches itself off when something breaks.
- * Version:           0.12.0
+ * Version:           0.12.1
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Author:            Abdul
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION  = '0.12.0';
+const VERSION  = '0.12.1';
 const MIN_PHP  = '8.1';
 const MIN_WP   = '6.5';
 

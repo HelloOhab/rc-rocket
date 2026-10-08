@@ -71,6 +71,14 @@ $broken = '<body><img src="a.jpg" <img src="b.jpg"></body>';
 $safe_out = $reflect->invoke( $media, $broken, $c );
 ok( 'media: malformed markup survives', strlen( $safe_out ) >= strlen( $broken ) - 5 );
 
+// On an HTTPS site the site's own http:// image addresses become https://;
+// other hosts are left alone.
+$sec = MediaModule::secure_own_urls( ' src="http://example.com/wp-content/uploads/logo.png" srcset="http://example.com/a.png 1x, http://cdn.other.com/b.png 2x"' );
+ok( 'media: own http image becomes https', str_contains( $sec, 'src="https://example.com/wp-content/uploads/logo.png"' ) );
+ok( 'media: own http srcset entry becomes https', str_contains( $sec, 'https://example.com/a.png 1x' ) );
+ok( 'media: another host is left alone', str_contains( $sec, 'http://cdn.other.com/b.png' ) );
+ok( 'media: a lookalike host is left alone', str_contains( MediaModule::secure_own_urls( ' src="http://example.com.evil.net/x.png"' ), 'http://example.com.evil.net' ) );
+
 // ==================== 12. Script delay ====================
 
 $settings->merge( [ 'js' => [ 'delay' => true, 'exclusions' => RCRocket\Assets\Presets::js_exclusions() ] ] );
@@ -89,6 +97,28 @@ ok( 'delay: loader is emitted once', substr_count( $dout, 'rcr-delay-loader' ) =
 // Divi 4 must never have inline scripts delayed.
 ok( 'delay: divi 4 inline script is left alone',
 	preg_match( '#<script>var inline#', $dout ) === 1, 'inline script was delayed on Divi 4' );
+
+// Google Tag Manager and invisible reCAPTCHA v3 wait for the visitor, even
+// on Divi; reCAPTCHA v2 (and its setup) and other inline code do not.
+$settings->merge( [ 'js' => [ 'delay_tracking' => true ] ] );
+$track = '<html><head><script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({\'gtm.start\':new Date().getTime(),event:\'gtm.js\'});j.src=\'https://www.googletagmanager.com/gtm.js?id=\'+i;})(window,document,\'script\',\'dataLayer\',\'GTM-X\');</script></head><body>'
+	. '<script id="wpforms-recaptcha-js" src="https://www.google.com/recaptcha/api.js?render=KEY"></script>'
+	. '<script id="wpforms-recaptcha-js-after">grecaptcha.ready(function(){});</script>'
+	. '<script>var keep_me = 1;</script></body></html>';
+$tout = $delay->invoke( $js, $track, $c );
+ok( 'delay: tag manager snippet waits for the visitor', (bool) preg_match( '#<script type="rcrocket/delayed">\(function\(w,d,s,l,i\)#', $tout ) );
+ok( 'delay: recaptcha v3 file waits', (bool) preg_match( '#rcrocket/delayed"[^>]*id="wpforms-recaptcha-js" data-rcr-src=#', $tout ) );
+ok( 'delay: recaptcha v3 setup moves with it', (bool) preg_match( '#rcrocket/delayed"[^>]*id="wpforms-recaptcha-js-after"#', $tout ) );
+ok( 'delay: other inline scripts still run on time', str_contains( $tout, '<script>var keep_me = 1;</script>' ) );
+
+$v2   = str_replace( 'api.js?render=KEY', 'api.js?onload=wpformsRecaptchaLoad&render=explicit', $track );
+$v2o  = $delay->invoke( $js, $v2, $c );
+ok( 'delay: recaptcha v2 file is left alone', ! preg_match( '#rcrocket/delayed"[^>]*id="wpforms-recaptcha-js"#', $v2o ) );
+ok( 'delay: and so is its setup', ! preg_match( '#rcrocket/delayed"[^>]*id="wpforms-recaptcha-js-after"#', $v2o ) );
+
+$settings->merge( [ 'js' => [ 'delay_tracking' => false ] ] );
+ok( 'delay: tag manager is on time with the setting off', ! preg_match( '#rcrocket/delayed">\(function\(w,d,s,l,i\)#', $delay->invoke( $js, $track, $c ) ) );
+$settings->merge( [ 'js' => [ 'delay_tracking' => true ] ] );
 
 // ==================== 13. Divi optimizer ====================
 

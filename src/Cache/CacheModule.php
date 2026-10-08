@@ -64,6 +64,9 @@ final class CacheModule implements Module {
 				'preload_max_urls'   => 500,
 				'warm_after_publish' => true,
 				'footer_signature'   => true,
+				// Analytics cookies set from PHP make every page uncacheable.
+				'strip_tracking_cookies' => true,
+				'tracking_cookies'       => [ '_fbp', '_fbc' ],
 				// Divi-specific.
 				'clear_divi_cache'      => true,
 				'refresh_form_nonces'   => true,
@@ -152,15 +155,24 @@ final class CacheModule implements Module {
 		/** @var Divi $divi */
 		$divi = $container->get( 'divi' );
 
-		if ( $divi->is_active() ) {
-			$divi->hooks();
-		}
+		$divi->when_active( [ $divi, 'hooks' ] );
 
 		// Warming runs in both modes: on a managed host it is the host's
 		// cache that gets warmed.
 		$container->get( 'cache.preloader' )->hooks();
 
 		add_action( 'admin_bar_menu', [ $this, 'admin_bar' ], 100 );
+
+		// Whoever caches the page, a tracking cookie sent from PHP stops it.
+		$cache_config = (array) $container->get( 'cache.config' );
+
+		if ( ! empty( $cache_config['strip_tracking_cookies'] ) ) {
+			$names = array_values( array_filter( array_map( 'strval', (array) ( $cache_config['tracking_cookies'] ?? [] ) ) ) );
+
+			if ( $names ) {
+				( new TrackingCookies( $names ) )->hooks();
+			}
+		}
 
 		// On a host with server-level page caching, ours must not run at all.
 		if ( $hosting->manages_page_cache() ) {

@@ -135,4 +135,30 @@ $bgout = ( new RCRocket\Media\Backgrounds() )->rewrite( $bg . '</body></html>' )
 ok( 'backgrounds: scripts are left alone', str_contains( $bgout, 'et_pb_section x">' ) );
 ok( 'backgrounds: the first three real sections are eager', str_contains( $bgout, 's2 rcr-bg-in' ) && ! str_contains( $bgout, 's3 rcr-bg-in' ) );
 
+// Tracking cookies are matched by exact name, never by prefix.
+require_once __DIR__ . '/../src/Cache/TrackingCookies.php';
+ok( 'cookies: name is read from a Set-Cookie line', '_fbp' === RCRocket\Cache\TrackingCookies::cookie_name( 'Set-Cookie: _fbp=fb.1.1; expires=x; path=/' ) );
+ok( 'cookies: a similar name is a different cookie', '_fbp_consent' === RCRocket\Cache\TrackingCookies::cookie_name( 'set-cookie: _fbp_consent=1' ) );
+
+// Lazy-load exclusions: skip-lazy is a class name, not a substring.
+require_once __DIR__ . '/../src/Media/MediaModule.php';
+$ex = [ 'skip-lazy', 'no-lazy', 'et_pb_menu__logo', 'hero.jpg' ];
+ok( 'exclusions: skip-lazy class is excluded', RCRocket\Media\MediaModule::excluded( ' class="a skip-lazy b" src="x.jpg"', $ex ) );
+ok( 'exclusions: Divi Supreme dsm-skip-lazyload is not', ! RCRocket\Media\MediaModule::excluded( ' class="dsm-skip-lazyload" src="x.jpg"', $ex ) );
+ok( 'exclusions: no-lazy inside another class is not', ! RCRocket\Media\MediaModule::excluded( ' class="has-no-lazyness" src="x.jpg"', $ex ) );
+ok( 'exclusions: file names still match anywhere', RCRocket\Media\MediaModule::excluded( ' src="/uploads/my-hero.jpg"', $ex ) );
+ok( 'exclusions: Divi menu logo class still matches', RCRocket\Media\MediaModule::excluded( ' class="et_pb_menu__logo-img"', $ex ) );
+
+// Divi is a theme, loaded after plugins: setup asked for at plugins_loaded
+// must wait for after_setup_theme instead of concluding Divi is absent.
+$GLOBALS['actions'] = [];
+$late_divi = new RCRocket\Integrations\Divi( new Logger( '/tmp/x.log', false ), [] );
+$ran       = 0;
+$late_divi->when_active( static function () use ( &$ran ) { ++$ran; } );
+ok( 'divi: nothing runs before the theme has loaded', 0 === $ran );
+ok( 'divi: setup waits for after_setup_theme', ! empty( $GLOBALS['actions']['after_setup_theme'] ) );
+define( 'ET_CORE_VERSION', '4.27.9' );   // the theme has now loaded
+foreach ( $GLOBALS['actions']['after_setup_theme'] as $cb ) { $cb(); }
+ok( 'divi: and runs once it has', 1 === $ran );
+
 report();

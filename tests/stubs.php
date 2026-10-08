@@ -21,7 +21,7 @@ $GLOBALS['posts']     = [];
 $GLOBALS['filters']   = [];
 
 function add_filter( $h, $c, $p = 10, $a = 1 ) { $GLOBALS['filters'][ $h ][] = $c; return true; }
-function add_action( $h, $c, $p = 10, $a = 1 ) { return true; }
+function add_action( $h, $c, $p = 10, $a = 1 ) { $GLOBALS['actions'][ $h ][] = $c; return true; }
 function remove_action( $h, $c, $p = 10 ) { return true; }
 function do_action( $h, ...$a ) { return null; }
 function apply_filters( $h, $v, ...$a ) { return $v; }

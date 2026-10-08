@@ -32,7 +32,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class MediaModule implements Module {
 
-	private const DIMENSION_CACHE = 'rcrocket_image_dimensions';
+	// v2: the first cache stored "unknown" for every http:// address of an
+	// uploaded image, which the lookup now resolves.
+	private const DIMENSION_CACHE = 'rcrocket_image_dimensions_v2';
 
 	public function id(): string {
 		return 'media';
@@ -140,13 +142,17 @@ final class MediaModule implements Module {
 			);
 		}
 
-		if ( $settings->enabled( 'media.lazy_backgrounds' ) && $container->get( 'divi' )->is_active() ) {
-			add_filter(
-				'rc-rocket/html',
-				static function ( string $html ): string {
-					return PageOptions::off( 'lazy_backgrounds' ) ? $html : ( new Backgrounds() )->rewrite( $html );
-				},
-				14
+		if ( $settings->enabled( 'media.lazy_backgrounds' ) ) {
+			$container->get( 'divi' )->when_active(
+				static function (): void {
+					add_filter(
+						'rc-rocket/html',
+						static function ( string $html ): string {
+							return PageOptions::off( 'lazy_backgrounds' ) ? $html : ( new Backgrounds() )->rewrite( $html );
+						},
+						14
+					);
+				}
 			);
 		}
 
@@ -189,6 +195,38 @@ final class MediaModule implements Module {
 			10,
 			3
 		);
+	}
+
+	/** Class conventions that only count as a whole class name. */
+	private const CLASS_EXCLUSIONS = [ 'skip-lazy', 'no-lazy' ];
+
+	/**
+	 * An exclusion matches anywhere in the tag (a file name, part of a
+	 * URL), except the skip-lazy/no-lazy conventions: those are class names,
+	 * and as plain text they also match other plugins' classes, such as
+	 * Divi Supreme's dsm-skip-lazyload, leaving hundreds of images with no
+	 * lazy loading at all, since WordPress's own is switched off here.
+	 *
+	 * @param array<int, mixed> $exclusions
+	 */
+	public static function excluded( string $attributes, array $exclusions ): bool {
+		foreach ( $exclusions as $needle ) {
+			$needle = (string) $needle;
+
+			if ( '' === $needle ) {
+				continue;
+			}
+
+			$hit = in_array( $needle, self::CLASS_EXCLUSIONS, true )
+				? (bool) preg_match( '#(?<![\w-])' . preg_quote( $needle, '#' ) . '(?![\w-])#i', $attributes )
+				: str_contains( $attributes, $needle );
+
+			if ( $hit ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/** @var array<string, mixed>|null */
@@ -252,11 +290,18 @@ final class MediaModule implements Module {
 					$attributes = substr( $attributes, 0, -strlen( $slash[0] ) );
 				}
 
-				foreach ( $exclusions as $needle ) {
-					if ( str_contains( $attributes, (string) $needle ) ) {
+				// Exclusions are about loading, never about size: an excluded
+				// image (Divi's menu logo is one by default) still needs its
+				// width and height, or it shifts the page when it arrives.
+				if ( self::excluded( $attributes, $exclusions ) ) {
+					if ( empty( $config['add_dimensions'] ) ) {
 						return $whole;
 					}
+
+					return '<img' . $this->ensure_dimensions( self::secure_own_urls( $attributes ) ) . $close . '>';
 				}
+
+				$attributes = self::secure_own_urls( $attributes );
 
 				++$seen;
 
@@ -435,13 +480,34 @@ final class MediaModule implements Module {
 		return $size;
 	}
 
+	/**
+	 * On an HTTPS page, the site's own http:// image addresses become
+	 * https://. Browsers upgrade them anyway and Lighthouse fails the page
+	 * for it (a logo picked before the site moved to HTTPS, typically).
+	 * Other hosts are left alone: they may not serve HTTPS.
+	 */
+	public static function secure_own_urls( string $attributes ): string {
+		if ( ! is_ssl() || ! str_contains( $attributes, 'http://' ) ) {
+			return $attributes;
+		}
+
+		$host = (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+
+		if ( '' === $host ) {
+			return $attributes;
+		}
+
+		return (string) preg_replace( '#http://(' . preg_quote( $host, '#' ) . ')(?=[/:"\'\s,]|$)#i', 'https://$1', $attributes );
+	}
+
 	/** Uploads and theme files only, and never outside wp-content. */
 	private function local_path( string $url ): ?string {
 		$uploads = wp_get_upload_dir();
-		$url     = (string) strtok( $url, '?#' );
+		// http:// and https:// name the same file: compare without the scheme.
+		$url     = (string) preg_replace( '#^https?:#i', '', (string) strtok( $url, '?#' ) );
 
 		foreach ( [ $uploads['baseurl'] => $uploads['basedir'], content_url() => WP_CONTENT_DIR, '/wp-content' => WP_CONTENT_DIR ] as $prefix => $dir ) {
-			foreach ( [ $prefix, (string) preg_replace( '#^https?:#', '', $prefix ) ] as $candidate ) {
+			foreach ( [ (string) preg_replace( '#^https?:#i', '', $prefix ) ] as $candidate ) {
 				if ( '' !== $candidate && str_starts_with( $url, $candidate ) ) {
 					$path = (string) realpath( $dir . rawurldecode( substr( $url, strlen( $candidate ) ) ) );
 
