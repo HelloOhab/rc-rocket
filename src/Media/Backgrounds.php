@@ -38,6 +38,9 @@ final class Backgrounds {
 		$seen  = 0;
 		$total = 0;
 
+		// Markup inside scripts, templates and comments is not a section.
+		[ $html, $kept ] = HtmlPipeline::mask( $html );
+
 		$html = (string) preg_replace_callback(
 			'#(<(?:div|section)\b[^>]*?\bclass\s*=\s*")([^"]*\bet_pb_section\b[^"]*)(")#i',
 			static function ( array $m ) use ( &$seen, &$total, $eager ): string {
@@ -51,6 +54,8 @@ final class Backgrounds {
 			},
 			$html
 		);
+
+		$html = HtmlPipeline::unmask( $html, $kept );
 
 		// A short page has nothing below the eager sections to hold back.
 		if ( $total <= $eager ) {

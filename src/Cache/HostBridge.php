@@ -79,14 +79,16 @@ final class HostBridge {
 	 * One page, on request: "Clear this page" in the admin bar or "Clear
 	 * cache" in the post list. Where the host cannot clear a single URL the
 	 * whole host cache goes instead, since someone explicitly asked.
+	 * Background refreshes ($explicit false) never escalate to that: the
+	 * hero beacon is public, and a full flush skips the rate limit.
 	 */
-	public function purge_url( mixed $url ): bool {
+	public function purge_url( mixed $url, bool $explicit = true ): bool {
 		if ( ! is_string( $url ) || '' === $url ) {
 			return false;
 		}
 
 		if ( ! $this->hosting->purge_host_url( $url ) ) {
-			return $this->purge_all( 'manual' );
+			return $explicit ? $this->purge_all( 'manual' ) : false;
 		}
 
 		$this->logger->debug(

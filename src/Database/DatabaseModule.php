@@ -116,7 +116,7 @@ final class DatabaseModule implements Module {
 		global $wpdb;
 
 		return [
-			'revisions'          => $this->surplus_revision_count( max( 0, $keep_revisions ) ),
+			'revisions'          => $this->surplus_revision_count( max( 1, $keep_revisions ) ),
 			'auto_drafts'        => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft' AND post_modified_gmt < %s", $this->week_ago() ) ), // phpcs:ignore
 			'trashed_posts'      => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash'" ), // phpcs:ignore
 			'spam_comments'      => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'spam'" ), // phpcs:ignore
@@ -298,7 +298,15 @@ final class DatabaseModule implements Module {
 
 		$tables = [];
 
+		// On a multisite main site the prefix (wp_) also matches every
+		// subsite's tables (wp_2_posts). Those are not this site's.
+		$subsite = is_multisite() ? '/^' . preg_quote( $wpdb->prefix, '/' ) . '\\d+_/' : '';
+
 		foreach ( (array) $rows as $row ) {
+			if ( '' !== $subsite && preg_match( $subsite, (string) $row->name ) ) {
+				continue;
+			}
+
 			if ( (int) $row->free > 1024 * 1024 ) {
 				$tables[] = (string) $row->name;
 			}

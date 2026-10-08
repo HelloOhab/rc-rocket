@@ -174,14 +174,16 @@ final class MediaModule implements Module {
 			40
 		);
 
-		// The cached copy still has the old guess: refresh that page.
+		// The cached copy still has the old guess: refresh that page. The
+		// report comes from a visitor, so this never clears the whole host
+		// cache; where the host cannot clear one page the copy just expires.
 		add_action(
 			'rc-rocket/lcp/measured',
 			static function ( string $key, string $device, string $page ): void {
 				if ( str_starts_with( $key, 'post:' ) ) {
-					\RCRocket\Plugin::instance()->purge_post( (int) substr( $key, 5 ) );
+					\RCRocket\Plugin::instance()->purge_post( (int) substr( $key, 5 ), false );
 				} elseif ( '' !== $page && str_starts_with( $page, '/' ) ) {
-					\RCRocket\Plugin::instance()->purge_url( home_url( $page ) );
+					\RCRocket\Plugin::instance()->purge_url( home_url( $page ), false );
 				}
 			},
 			10,

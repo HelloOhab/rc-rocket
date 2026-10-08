@@ -123,7 +123,12 @@ final class Lcp {
 
 		delete_option( self::OPTION );
 
-		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->postmeta} WHERE meta_key = %s", self::META ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$count = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s", self::META ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+
+		// Through the API, so a persistent object cache forgets them too.
+		delete_post_meta_by_key( self::META );
+
+		return $count;
 	}
 
 	/**

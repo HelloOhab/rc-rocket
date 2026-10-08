@@ -71,6 +71,7 @@ final class Plugin {
 		$this->register_modules();
 
 		add_action( 'plugins_loaded', [ $this, 'migrate' ], 4 );
+		add_action( 'plugins_loaded', [ $this, 'refresh_dropin' ], 4 );
 		add_action( 'plugins_loaded', [ $this, 'boot_modules' ], 5 );
 		add_action( 'init', [ $this, 'load_textdomain' ] );
 
@@ -197,6 +198,26 @@ final class Plugin {
 		$settings->save();
 	}
 
+	/**
+	 * The installed drop-in is a copy, so a release that changes it would
+	 * never reach sites without this. Checked once per plugin version.
+	 */
+	public function refresh_dropin(): void {
+		if ( get_option( 'rcrocket_dropin_version' ) === VERSION ) {
+			return;
+		}
+
+		if ( $this->container->has( 'cache.dropin' ) && $this->container->has( 'hosting' ) ) {
+			$dropin = $this->container->get( 'cache.dropin' );
+
+			if ( $dropin->is_ours() && ! $this->container->get( 'hosting' )->manages_page_cache() ) {
+				$dropin->refresh();
+			}
+		}
+
+		update_option( 'rcrocket_dropin_version', VERSION, true );
+	}
+
 	public function load_textdomain(): void {
 		load_plugin_textdomain( 'rc-rocket', false, dirname( RCROCKET_BASENAME ) . '/languages' );
 	}
@@ -257,13 +278,13 @@ final class Plugin {
 	/**
 	 * Clear one page from whichever cache serves it: ours, or the host's.
 	 */
-	public function purge_url( string $url ): int {
+	public function purge_url( string $url, bool $explicit = true ): int {
 		if ( '' === $url ) {
 			return 0;
 		}
 
 		if ( $this->container->get( 'hosting' )->manages_page_cache() ) {
-			$this->container->get( 'cache.host_bridge' )->purge_url( $url );
+			$this->container->get( 'cache.host_bridge' )->purge_url( $url, $explicit );
 
 			// Kinsta empties the page; ask for it again shortly so the next
 			// visitor gets a cached copy rather than paying for the rebuild.
@@ -278,10 +299,10 @@ final class Plugin {
 	}
 
 	/** Clear a post's own page. Archives and the home page refresh on edit. */
-	public function purge_post( int $post_id ): int {
+	public function purge_post( int $post_id, bool $explicit = true ): int {
 		$url = (string) get_permalink( $post_id );
 
-		return '' === $url ? 0 : $this->purge_url( $url );
+		return '' === $url ? 0 : $this->purge_url( $url, $explicit );
 	}
 
 	/**

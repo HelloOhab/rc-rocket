@@ -118,4 +118,21 @@ $econf2 = Embeds::defaults() + Video::defaults();
 $outv2  = $embeds->rewrite( VIMEO_CONTENT, $econf2 );
 ok( 'embeds: no poster means no facade', ! str_contains( $outv2, 'data-rcr-embed' ), 'faded with no poster available' );
 
+// A malformed list in the drop-in config (an array from a bad import) must
+// be dropped, not fatal every cached request before WordPress loads.
+$badcfg = Key::config_defaults();
+$badcfg['vary_cookies']  = [ [ 'x' ], 'lang' ];
+$badcfg['excluded_uris'] = [ [ 'y' ] ];
+ok( 'key: nested vary cookie is ignored', str_ends_with( Key::variant( [ 'HTTP_USER_AGENT' => 'x' ], [ 'lang' => 'en' ], $badcfg ), '|lang=' . substr( md5( 'en' ), 0, 8 ) ) );
+ok( 'key: nested exclusion is ignored', null === Key::bypass_reason( [ 'REQUEST_URI' => '/a/', 'REQUEST_METHOD' => 'GET', 'HTTP_USER_AGENT' => 'x' ], [], $badcfg ) );
+
+// Section markup inside a script is not a section and takes no eager slot.
+$bg = '<html><head></head><body><script>var t = \'<div class="et_pb_section x">\';</script>';
+for ( $i = 0; $i < 5; $i++ ) {
+	$bg .= '<div class="et_pb_section s' . $i . '"></div>';
+}
+$bgout = ( new RCRocket\Media\Backgrounds() )->rewrite( $bg . '</body></html>' );
+ok( 'backgrounds: scripts are left alone', str_contains( $bgout, 'et_pb_section x">' ) );
+ok( 'backgrounds: the first three real sections are eager', str_contains( $bgout, 's2 rcr-bg-in' ) && ! str_contains( $bgout, 's3 rcr-bg-in' ) );
+
 report();

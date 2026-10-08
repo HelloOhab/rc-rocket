@@ -166,7 +166,7 @@ final class Key {
 			}
 		}
 
-		foreach ( (array) ( $config['excluded_uris'] ?? [] ) as $pattern ) {
+		foreach ( self::strings( $config['excluded_uris'] ?? [] ) as $pattern ) {
 			if ( '' !== $pattern && self::matches( (string) $pattern, self::path_only( $uri ) ) ) {
 				return 'excluded-uri';
 			}
@@ -174,7 +174,7 @@ final class Key {
 
 		$agent = (string) ( $server['HTTP_USER_AGENT'] ?? '' );
 
-		foreach ( (array) ( $config['excluded_agents'] ?? [] ) as $needle ) {
+		foreach ( self::strings( $config['excluded_agents'] ?? [] ) as $needle ) {
 			if ( '' !== $needle && false !== stripos( $agent, (string) $needle ) ) {
 				return 'excluded-agent';
 			}
@@ -220,7 +220,7 @@ final class Key {
 
 		parse_str( $raw, $args );
 
-		foreach ( array_merge( self::TRACKING_PARAMS, (array) ( $config['ignored_params'] ?? [] ) ) as $param ) {
+		foreach ( array_merge( self::TRACKING_PARAMS, self::strings( $config['ignored_params'] ?? [] ) ) as $param ) {
 			unset( $args[ (string) $param ] );
 		}
 
@@ -228,7 +228,7 @@ final class Key {
 			return '';
 		}
 
-		$whitelist = (array) ( $config['query_whitelist'] ?? [] );
+		$whitelist = self::strings( $config['query_whitelist'] ?? [] );
 
 		foreach ( array_keys( $args ) as $name ) {
 			if ( ! in_array( (string) $name, $whitelist, true ) ) {
@@ -295,11 +295,22 @@ final class Key {
 			$parts[] = '' === $role ? 'anon' : $role;
 		}
 
-		foreach ( (array) ( $config['vary_cookies'] ?? [] ) as $cookie ) {
+		foreach ( self::strings( $config['vary_cookies'] ?? [] ) as $cookie ) {
 			$parts[] = $cookie . '=' . substr( md5( (string) ( $cookies[ $cookie ] ?? '' ) ), 0, 8 );
 		}
 
 		return implode( '|', $parts );
+	}
+
+	/**
+	 * A config list as strings. The drop-in runs before WordPress, so a
+	 * malformed entry (an array from a bad import) must be dropped here
+	 * rather than fatal every cached request.
+	 *
+	 * @return string[]
+	 */
+	private static function strings( mixed $list ): array {
+		return array_values( array_map( 'strval', array_filter( (array) $list, 'is_scalar' ) ) );
 	}
 
 	public static function is_mobile( string $agent, array $config ): bool {
