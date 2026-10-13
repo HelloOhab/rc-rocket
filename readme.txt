@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.1
+Stable tag: 0.12.2
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,20 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.2 =
+From testing 0.12.1 on rhythmco.com (Divi 5) and americanhomesiding.com (Divi 4).
+* Fixed: on Divi 5, background videos never got their section's background
+  image as a poster. The automatic poster only read Divi 4 shortcodes, and
+  without a poster the video loads in full before the hero paints. On a
+  Divi 5 home page with a 2.6 MB hero video the phone hero showed at 8.5 s
+  with RC Rocket on; with the poster in place the phone score matched
+  RC Rocket off. The poster is now read from Divi 5 layouts automatically.
+* Fixed: on Divi 5, "Hold the video back until it can play well" would have
+  left the video unplayable, because Divi 5 loads the source from data-src.
+* Fixed: Dashboard > Updates > Check again now also refreshes RC Rocket's
+  own update check, so a new release shows up straight away instead of up
+  to 6 hours later.
 
 = 0.12.1 =
 From testing on a Divi 4 and a Divi 5 site on Kinsta.
