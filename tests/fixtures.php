@@ -69,3 +69,13 @@ HTML;
 
 // A Divi 4 section shortcode that carries both a video and its fallback image.
 const DIVI4_SHORTCODE = '[et_pb_section fb_built="1" background_video_mp4="https://example.com/wp-content/uploads/2026/01/hero.mp4" background_image="https://example.com/wp-content/uploads/2026/01/hero-fallback.jpg" _builder_version="4.27.4"][et_pb_row][et_pb_column type="4_4"][et_pb_gallery gallery_ids="1,2"][/et_pb_gallery][et_pb_toggle title="FAQ"][/et_pb_toggle][/et_pb_column][/et_pb_row][/et_pb_section]';
+
+// Divi 5 saves layouts as block markup. Trimmed from a live Divi 5.14 home
+// page: desktop has a video and an image, tablet an image only, and phone
+// switches the video off with an empty string.
+const DIVI5_BLOCKS = '<!-- wp:divi/placeholder --><!-- wp:divi/section {"module":{"decoration":{"background":{"desktop":{"value":{"video":{"mp4":"https://example.com/wp-content/uploads/2026/07/hero.mp4"},"gradient":{"enabled":"off"},"image":{"url":"https://example.com/wp-content/uploads/2026/09/hero-still.webp"}}},"tablet":{"value":{"image":{"url":"https://example.com/wp-content/uploads/2026/09/hero-still.webp"}}},"phone":{"value":{"video":{"mp4":""}}}},"sizing":{"desktop":{"value":{"minHeight":"90vh"}}}}},"builderVersion":"5.14.0"} --><!-- wp:divi/row {"module":{"decoration":{"background":{"desktop":{"value":{"color":"#000"}}}}}} --><!-- /wp:divi/row --><!-- /wp:divi/section --><!-- wp:divi/section {"module":{"decoration":{"background":{"desktop":{"value":{"video":{"webm":"https://example.com/wp-content/uploads/2026/07/second.webm"}}},"tablet":{"value":{"image":{"url":"https://example.com/wp-content/uploads/2026/07/second-tablet.jpg"}}}}}}} --><!-- /wp:divi/section --><!-- /wp:divi/placeholder -->';
+
+// How Divi 5 renders that background video: data-src, filled in by Divi's script.
+const DIVI5_LIVE_VIDEO = <<<'HTML'
+<div class="et_pb_section_0 et_pb_section et_section_regular et_flex_section et-pb-has-background-video et_pb_preload hero"><span class="et-pb-background-video"><video autoplay loop playsinline muted><source type="video/mp4" data-src="https://example.com/wp-content/uploads/2026/07/hero.mp4" /></video></span><div class="et_pb_row_0 et_pb_row"><h1>Headline</h1></div></div>
+HTML;

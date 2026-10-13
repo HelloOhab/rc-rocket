@@ -47,6 +47,9 @@ final class Divi {
 		'et_theme_builder',
 	];
 
+	/** @var array<string, string>|null Per-request cache of background_media_map(). */
+	private ?array $background_media = null;
+
 	public function __construct( private Logger $logger, private array $config ) {}
 
 	// ---------------------------------------------------------------- detect
@@ -374,7 +377,8 @@ final class Divi {
 	 * Pair every background video with the fallback image sitting next to it
 	 * in the same section.
 	 *
-	 * On Divi 4 the section shortcode already carries both — the person who
+	 * On Divi 4 the section shortcode already carries both, and on Divi 5 the
+	 * section block's JSON does — the person who
 	 * built the page chose a fallback image, Divi just never puts it on the
 	 * video element as a poster. Reading it here means the poster is correct by
 	 * default and nobody has to configure anything.
@@ -382,10 +386,8 @@ final class Divi {
 	 * @return array<string, string> Video file basename to fallback image URL.
 	 */
 	public function background_media_map(): array {
-		static $map = null;
-
-		if ( null !== $map ) {
-			return $map;
+		if ( null !== $this->background_media ) {
+			return $this->background_media;
 		}
 
 		$map     = [];
@@ -413,12 +415,14 @@ final class Divi {
 			$map += $this->parse_background_media( $post->post_content );
 		}
 
-		return $map;
+		return $this->background_media = $map;
 	}
 
 	/** @return array<string, string> */
 	private function parse_background_media( string $content ): array {
-		$map = [];
+		// Divi 5 saves layouts as block markup; Divi 4 as shortcodes. A site
+		// mid-migration can hold both, so both are read.
+		$map = $this->parse_divi5_background_media( $content );
 
 		// Every opening builder tag that can carry a background.
 		if ( ! preg_match_all( '/\[et_pb_(?:section|row|column|fullwidth_header|slide)\b([^\]]*)\]/i', $content, $tags ) ) {
@@ -444,6 +448,92 @@ final class Divi {
 		}
 
 		return $map;
+	}
+
+	/**
+	 * Divi 5 keeps a module's background in the block comment's JSON:
+	 *
+	 *     <!-- wp:divi/section {"module":{"decoration":{"background":{
+	 *         "desktop":{"value":{"video":{"mp4":"…"},"image":{"url":"…"}}},
+	 *         "phone":{"value":{"video":{"mp4":""}}}}}}} -->
+	 *
+	 * Each breakpoint inherits from desktop, so a video set on one breakpoint
+	 * is paired with that breakpoint's image, else the desktop image.
+	 *
+	 * @return array<string, string>
+	 */
+	private function parse_divi5_background_media( string $content ): array {
+		$map = [];
+
+		if ( ! str_contains( $content, '<!-- wp:divi/' ) ) {
+			return $map;
+		}
+
+		// WordPress escapes "--" inside block JSON, so the first " -->" after
+		// the opening brace always closes the comment.
+		if ( ! preg_match_all( '#<!--\s+wp:divi/[a-z0-9-]+\s+(\{.*?\})\s+/?-->#s', $content, $blocks ) ) {
+			return $map;
+		}
+
+		foreach ( $blocks[1] as $json ) {
+			if ( ! str_contains( $json, '"video"' ) ) {
+				continue;
+			}
+
+			$attributes = json_decode( $json, true );
+			$background = is_array( $attributes ) ? ( $attributes['module']['decoration']['background'] ?? null ) : null;
+
+			if ( ! is_array( $background ) ) {
+				continue;
+			}
+
+			$desktop_image = self::divi5_value( $background, 'desktop', [ 'image', 'url' ] );
+
+			foreach ( $background as $breakpoint => $state ) {
+				if ( ! is_string( $breakpoint ) || ! is_array( $state ) ) {
+					continue;
+				}
+
+				$image = self::divi5_value( $background, $breakpoint, [ 'image', 'url' ] );
+				$image = '' !== $image ? $image : $desktop_image;
+
+				if ( '' === $image ) {
+					continue;
+				}
+
+				foreach ( [ 'mp4', 'webm' ] as $format ) {
+					$video = self::divi5_value( $background, $breakpoint, [ 'video', $format ] );
+
+					if ( '' !== $video && ! isset( $map[ self::media_key( $video ) ] ) ) {
+						$map[ self::media_key( $video ) ] = $image;
+					}
+				}
+			}
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Read one value from a Divi 5 breakpoint, e.g. desktop → value → image → url.
+	 * Divi 5 also nests a "hover"/"sticky" state beside "value"; only the
+	 * resting state paints first, so only "value" is read.
+	 *
+	 * @param array<mixed>  $background
+	 * @param array<string> $path
+	 */
+	private static function divi5_value( array $background, string $breakpoint, array $path ): string {
+		$node = $background[ $breakpoint ]['value'] ?? null;
+
+		foreach ( $path as $key ) {
+			if ( ! is_array( $node ) || ! array_key_exists( $key, $node ) ) {
+				return '';
+			}
+
+			$node = $node[ $key ];
+		}
+
+		return is_string( $node ) ? html_entity_decode( trim( $node ) ) : '';
 	}
 
 	private function shortcode_attribute( string $attributes, string $name ): string {
