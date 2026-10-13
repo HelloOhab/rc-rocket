@@ -157,6 +157,37 @@ ok( 'divi: gating is off by default', ! str_contains( $auto, 'data-rcr-video' ) 
 $gated = $video->rewrite( DIVI4_VIDEO, [ 'withhold' => true ] + RCRocket\Media\Video::defaults() );
 ok( 'divi: and gating applies when asked for', str_contains( $gated, 'data-rcr-video' ) );
 
+// Divi 5: the same pairing, read from block JSON instead of shortcodes.
+$post5               = new WP_Post();
+$post5->ID           = 6;
+$post5->post_content = DIVI5_BLOCKS;
+$GLOBALS['posts'][6] = $post5;
+$GLOBALS['ctx']      = [ 'singular' => true, 'object_id' => 6, 'post_type' => 'page' ];
+
+$divi5 = new Divi( $logger, [] );
+$map5  = $divi5->background_media_map();
+ok( 'divi 5: fallback image is paired with the video',
+	( $map5['hero.mp4'] ?? '' ) === 'https://example.com/wp-content/uploads/2026/09/hero-still.webp',
+	json_encode( $map5 ) );
+ok( 'divi 5: an empty phone video is ignored', ! isset( $map5[''] ), json_encode( $map5 ) );
+ok( 'divi 5: a video with no image on its breakpoint and none on desktop gets nothing',
+	! isset( $map5['second.webm'] ), json_encode( $map5 ) );
+ok( 'divi 5: map is cached per instance, not per process',
+	( $map['hero.mp4'] ?? '' ) !== ( $map5['hero.mp4'] ?? '' ) );
+
+$video5 = new RCRocket\Media\Video( new Context(), $divi5 );
+$auto5  = $video5->rewrite( DIVI5_LIVE_VIDEO, RCRocket\Media\Video::defaults() );
+ok( 'divi 5: poster resolves from Divi with no configuration',
+	str_contains( $auto5, 'poster="https://example.com/wp-content/uploads/2026/09/hero-still.webp"' ),
+	$auto5 );
+ok( 'divi 5: source left for Divi when not gated', str_contains( $auto5, 'data-src="https://example.com/wp-content/uploads/2026/07/hero.mp4"' ) );
+
+$gated5 = $video5->rewrite( DIVI5_LIVE_VIDEO, [ 'withhold' => true ] + RCRocket\Media\Video::defaults() );
+ok( 'divi 5: gating takes over data-src cleanly',
+	str_contains( $gated5, 'data-rcr-src="https://example.com/wp-content/uploads/2026/07/hero.mp4"' )
+	&& ! str_contains( $gated5, 'data-data-' ) && ! preg_match( '#(?<![\w-])data-src=#', $gated5 ),
+	$gated5 );
+
 // ==================== 10. Presets ====================
 
 ok( 'presets: jquery is protected', in_array( 'jquery', Presets::protected_handles(), true ) );

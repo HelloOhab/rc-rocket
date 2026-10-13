@@ -132,14 +132,17 @@ final class Video {
 
 				// Detach the sources. The browser cannot request what it cannot
 				// see, and JavaScript decides later whether it ever should.
+				// Divi 5 already ships the source as data-src and lets its own
+				// script fill in src; take that over too, or the rename would
+				// produce data-data-rcr-src and the video would never play.
 				$inner = (string) preg_replace(
-					'#(<source\b[^>]*?)\bsrc\s*=#i',
+					'#(<source\b[^>]*?)(?<![\w-])(?:data-)?src\s*=#i',
 					'$1data-rcr-src=',
 					$inner
 				);
 
 				// Some Divi builds put the source on the video element itself.
-				$attributes = (string) preg_replace( '#\bsrc\s*=#i', 'data-rcr-src=', $attributes );
+				$attributes = (string) preg_replace( '#(?<![\w-])(?:data-)?src\s*=#i', 'data-rcr-src=', $attributes );
 
 				return '<video' . $attributes . '>' . $inner . '</video>';
 			},
