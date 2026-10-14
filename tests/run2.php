@@ -220,6 +220,25 @@ ok( 'divi cold css: guard still serves the cold page unchanged', $guard->guard_c
 ok( 'divi cold css: and keeps it out of the page cache',
 	$guard->rendered_cold() && 'divi-css-rebuilding' === $guard->bypass_reason() && defined( 'DONOTCACHEPAGE' ) && DONOTCACHEPAGE );
 
+// Kinsta ignores the no-cache headers, so the URL is purged once stored.
+$_SERVER['HTTP_HOST']   = 'Example.com';
+$_SERVER['REQUEST_URI'] = '/faq/?utm_source=x';
+$GLOBALS['scheduled']   = [];
+( new Divi( $logger, [] ) )->guard_cold_css( $cold_render );
+$job = $GLOBALS['scheduled'][0] ?? [];
+ok( 'divi cold css: schedules a purge of that one page',
+	Divi::COLD_PURGE_HOOK === ( $job[1] ?? '' ) && [ 'https://example.com/faq/' ] === ( $job[2] ?? null ),
+	json_encode( $job ) );
+ok( 'divi cold css: the purge waits for the host to store the page',
+	( $job[0] ?? 0 ) >= time() + Divi::COLD_PURGE_DELAY - 2 );
+$GLOBALS['scheduled'] = [];
+( new Divi( $logger, [] ) )->guard_cold_css( $good_render );
+ok( 'divi cold css: a good render schedules nothing', [] === $GLOBALS['scheduled'] );
+$_SERVER['HTTP_HOST'] = 'evil.com/<x>';
+ok( 'divi cold css: a malformed host is never purged', null === Divi::request_url() );
+unset( $_SERVER['HTTP_HOST'], $_SERVER['REQUEST_URI'] );
+ok( 'divi cold css: nothing to purge outside a request', null === Divi::request_url() );
+
 // ==================== 10. Presets ====================
 
 ok( 'presets: jquery is protected', in_array( 'jquery', Presets::protected_handles(), true ) );

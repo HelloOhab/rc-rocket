@@ -26,6 +26,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class Divi {
 
+	/** Cron hook that drops a page Divi rendered mid-rebuild from the host cache. */
+	public const COLD_PURGE_HOOK = 'rc-rocket/divi/purge-cold-page';
+
+	/** Seconds to wait: long enough for the host to have stored it and Divi to finish. */
+	public const COLD_PURGE_DELAY = 30;
+
 	/** Query args that mean "this is the builder, not the site". */
 	private const BUILDER_ARGS = [
 		'et_fb',
@@ -315,8 +321,9 @@ final class Divi {
 	 * Divi 4 and Divi 5 sites). The very next request is fine.
 	 *
 	 * The page itself is still served — it is only this one copy that must not
-	 * be stored, or the host serves it to everyone for hours. Kinsta, RC
-	 * Rocket's own cache and every other page cache honour no-cache headers.
+	 * be stored, or the host serves it to everyone for hours. RC Rocket's own
+	 * cache and most page caches honour the no-cache headers; Kinsta does not,
+	 * so the URL is also purged from the host cache shortly afterwards.
 	 */
 	public function guard_cold_css( string $html ): string {
 		if ( ! self::is_cold_render( $html ) ) {
@@ -334,9 +341,41 @@ final class Divi {
 			header( 'X-RC-Rocket-Divi: css-rebuilding' );
 		}
 
-		$this->logger->debug( 'Divi CSS was rebuilding: this response is not cached' );
+		// Kinsta's server and edge caches ignore the headers above (seen on
+		// yourhomesolar.com: stored anyway, Cache-Control rewritten to
+		// s-maxage=86400). So drop this one URL from the host cache once the
+		// response has been stored and Divi has had time to finish; the next
+		// visitor then gets, and caches, the proper page.
+		$url = self::request_url();
+
+		if ( null !== $url && ! wp_next_scheduled( self::COLD_PURGE_HOOK, [ $url ] ) ) {
+			wp_schedule_single_event( time() + self::COLD_PURGE_DELAY, self::COLD_PURGE_HOOK, [ $url ] );
+		}
+
+		$this->logger->debug( 'Divi CSS was rebuilding: this response is not cached', [ 'url' => $url ] );
 
 		return $html;
+	}
+
+	/**
+	 * The page being served, as the host caches it: scheme, host and path,
+	 * no query string (Kinsta does not cache those). Null outside a request.
+	 */
+	public static function request_url(): ?string {
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? (string) $_SERVER['HTTP_HOST'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+
+		if ( '' === $host || '' === $uri || ! preg_match( '/^[a-z0-9.:-]+$/i', $host ) ) {
+			return null;
+		}
+
+		$path = (string) strtok( $uri, '?#' );
+
+		if ( '' === $path || '/' !== $path[0] ) {
+			return null;
+		}
+
+		return ( is_ssl() ? 'https://' : 'http://' ) . strtolower( $host ) . $path;
 	}
 
 	/**

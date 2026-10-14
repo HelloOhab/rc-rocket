@@ -60,7 +60,7 @@ function wp_mkdir_p( $d ) { return is_dir( $d ) || mkdir( $d, 0777, true ); }
 function wp_using_ext_object_cache() { return false; }
 function wp_next_scheduled( $h ) { return false; }
 function wp_schedule_event( ...$a ) { return true; }
-function wp_schedule_single_event( ...$a ) { return true; }
+function wp_schedule_single_event( ...$a ) { $GLOBALS['scheduled'][] = $a; return true; }
 function wp_clear_scheduled_hook( ...$a ) { return 0; }
 function content_url( $p = '' ) { return 'https://example.com/wp-content' . ( $p ? '/' . ltrim( $p, '/' ) : '' ); }
 function is_ssl() { return true; }

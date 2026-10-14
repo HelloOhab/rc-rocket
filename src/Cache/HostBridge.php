@@ -42,6 +42,10 @@ final class HostBridge {
 		add_action( 'rc-rocket/purge/url', [ $this, 'purge_url' ], 10, 1 );
 		add_action( self::DEFERRED_HOOK, [ $this, 'deferred' ], 10, 1 );
 
+		// A Divi page cached while Divi was rebuilding its CSS: drop just that
+		// URL. Never escalates to a full flush if the host cannot do one URL.
+		add_action( Divi::COLD_PURGE_HOOK, fn( $url ) => $this->purge_url( $url, false ), 10, 1 );
+
 		// Global presentation changes the host has no way to notice.
 		add_action( 'customize_save_after', fn() => $this->purge_all( 'customizer' ) );
 		add_action( 'wp_update_nav_menu', fn() => $this->purge_all( 'menu' ) );
