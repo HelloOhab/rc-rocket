@@ -188,6 +188,38 @@ ok( 'divi 5: gating takes over data-src cleanly',
 	&& ! str_contains( $gated5, 'data-data-' ) && ! preg_match( '#(?<![\w-])data-src=#', $gated5 ),
 	$gated5 );
 
+// ==================== 9b. Divi CSS rebuilding (cold renders) ====================
+
+// Trimmed from real responses: yourhomesolar.com /faq/ (Divi 4) and
+// rhythmco.com / (Divi 5), fresh render vs the copy Kinsta cached while Divi
+// was rebuilding its CSS.
+$good_render = '<html><head>'
+	. '<style id="divi-dynamic-critical-inline-css">.et_pb_section{}</style>'
+	. '<style id="et-critical-inline-css">.et_pb_row_0{width:90%}</style>'
+	. '<link rel="preload" as="style" id="et-core-unified-tb-8322-tb-8430-deferred-4125-css" href="https://example.com/wp-content/et-cache/4125/et-core-unified-tb-8322-tb-8430-deferred-4125.min.css?ver=1">'
+	. '</head><body>' . str_repeat( 'x ', 200 ) . '</body></html>';
+$cold_render = '<html><head>'
+	. '<style id="divi-dynamic-critical-inline-css">.et_pb_section{}</style>'
+	. '<style id="et-core-unified-tb-8322-tb-8430-4125-cached-inline-styles">.a{}</style>'
+	. '</head><body>' . str_repeat( 'x ', 200 )
+	. '<style id="et-core-unified-tb-8322-tb-8430-deferred-4125-cached-inline-styles-2">.et_pb_row_0{width:90%}</style>'
+	. '</body></html>';
+$no_critical_mode = '<html><head><link rel="stylesheet" href="https://example.com/wp-content/et-cache/2/et-core-unified-2.min.css"></head><body>' . str_repeat( 'x ', 200 ) . '</body></html>';
+$archive = '<html><head><style id="et-critical-inline-css">.a{}</style></head><body class="archive">' . str_repeat( 'x ', 200 ) . '</body></html>';
+
+ok( 'divi cold css: a good render is not flagged', ! Divi::is_cold_render( $good_render ) );
+ok( 'divi cold css: a mid-rebuild render is flagged', Divi::is_cold_render( $cold_render ) );
+ok( 'divi cold css: Critical CSS off is never flagged', ! Divi::is_cold_render( $no_critical_mode ) );
+ok( 'divi cold css: a page without deferred CSS is never flagged', ! Divi::is_cold_render( $archive ) );
+ok( 'divi cold css: a non-Divi page is never flagged', ! Divi::is_cold_render( $doc ) );
+
+$guard = new Divi( $logger, [] );
+ok( 'divi cold css: guard leaves good markup untouched and cacheable',
+	$guard->guard_cold_css( $good_render ) === $good_render && ! $guard->rendered_cold() && 'divi-css-rebuilding' !== $guard->bypass_reason() );
+ok( 'divi cold css: guard still serves the cold page unchanged', $guard->guard_cold_css( $cold_render ) === $cold_render );
+ok( 'divi cold css: and keeps it out of the page cache',
+	$guard->rendered_cold() && 'divi-css-rebuilding' === $guard->bypass_reason() && defined( 'DONOTCACHEPAGE' ) && DONOTCACHEPAGE );
+
 // ==================== 10. Presets ====================
 
 ok( 'presets: jquery is protected', in_array( 'jquery', Presets::protected_handles(), true ) );

@@ -50,6 +50,9 @@ final class Divi {
 	/** @var array<string, string>|null Per-request cache of background_media_map(). */
 	private ?array $background_media = null;
 
+	/** Set when this response was rendered while Divi was rebuilding its CSS. */
+	private bool $cold_render = false;
+
 	public function __construct( private Logger $logger, private array $config ) {}
 
 	// ---------------------------------------------------------------- detect
@@ -164,6 +167,10 @@ final class Divi {
 	 * Reasons a Divi site must never serve or store a cached response.
 	 */
 	public function bypass_reason(): ?string {
+		if ( $this->cold_render ) {
+			return 'divi-css-rebuilding';
+		}
+
 		foreach ( self::BUILDER_ARGS as $arg ) {
 			if ( isset( $_GET[ $arg ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 				return 'divi-builder';
@@ -285,8 +292,72 @@ final class Divi {
 		// Our purge should take Divi's stale static CSS with it.
 		add_action( 'rc-rocket/cache/purged', [ $this, 'clear_et_cache' ], 10, 2 );
 
+		// Runs first: decides whether this response may be cached at all.
+		add_filter( 'rc-rocket/html', [ $this, 'guard_cold_css' ], 1, 1 );
+
 		// Runs last in the rewrite chain, after scripts have been delayed.
 		add_filter( 'rc-rocket/html', [ $this, 'strip_nonces' ], 40, 1 );
+	}
+
+	// ------------------------------------------------------ cold CSS renders
+
+	/**
+	 * Keep a page Divi rendered mid-rebuild out of every page cache.
+	 *
+	 * With Critical CSS on, Divi splits a page's styles in two: the above-the-
+	 * fold part inlined as `<style id="et-critical-inline-css">`, the rest in
+	 * an `et-core-unified-…-deferred-….min.css` file loaded late. Both are
+	 * generated on the first request after Divi's CSS was cleared — which
+	 * happens on every plugin update, theme option save and cache purge.
+	 * That first request gets neither: no critical block, and the deferred
+	 * styles printed inline as `…-deferred-…-cached-inline-styles`, so the
+	 * page paints unstyled and then jumps (CLS 0.2–0.7 measured on three
+	 * Divi 4 and Divi 5 sites). The very next request is fine.
+	 *
+	 * The page itself is still served — it is only this one copy that must not
+	 * be stored, or the host serves it to everyone for hours. Kinsta, RC
+	 * Rocket's own cache and every other page cache honour no-cache headers.
+	 */
+	public function guard_cold_css( string $html ): string {
+		if ( ! self::is_cold_render( $html ) ) {
+			return $html;
+		}
+
+		$this->cold_render = true;
+
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+
+		if ( ! headers_sent() ) {
+			header( 'Cache-Control: no-cache, no-store, must-revalidate, max-age=0' );
+			header( 'X-RC-Rocket-Divi: css-rebuilding' );
+		}
+
+		$this->logger->debug( 'Divi CSS was rebuilding: this response is not cached' );
+
+		return $html;
+	}
+
+	/**
+	 * A page that uses Divi's deferred stylesheet but has no critical CSS
+	 * block was rendered before Divi finished generating its CSS.
+	 *
+	 * Pages without the deferred stylesheet (Critical CSS off, archives,
+	 * non-Divi templates) never match, so they keep being cached as before.
+	 */
+	public static function is_cold_render( string $html ): bool {
+		// The deferred styles are a preloaded <link> on a good render and an
+		// inline <style> on a cold one, which Divi may print in the footer.
+		if ( ! preg_match( '/et-core-unified-[a-z0-9-]*deferred/i', $html ) ) {
+			return false;
+		}
+
+		return ! preg_match( '/<style[^>]+id=["\']et-critical-inline-css["\']/i', $html );
+	}
+
+	public function rendered_cold(): bool {
+		return $this->cold_render;
 	}
 
 	public function on_layout_save( mixed $post_id ): void {
