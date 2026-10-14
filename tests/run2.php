@@ -190,6 +190,11 @@ ok( 'divi 5: gating takes over data-src cleanly',
 
 // ==================== 9b. Divi CSS rebuilding (cold renders) ====================
 
+// PHP-FPM's early finish, as on Kinsta. The CLI has no such function.
+if ( ! function_exists( 'fastcgi_finish_request' ) ) {
+	function fastcgi_finish_request(): bool { return true; }
+}
+
 // Trimmed from real responses: yourhomesolar.com /faq/ (Divi 4) and
 // rhythmco.com / (Divi 5), fresh render vs the copy Kinsta cached while Divi
 // was rebuilding its CSS.
@@ -231,8 +236,12 @@ ok( 'divi cold css: schedules a purge of that one page',
 	json_encode( $job ) );
 ok( 'divi cold css: the purge waits for the host to store the page',
 	( $job[0] ?? 0 ) >= time() + Divi::COLD_PURGE_DELAY - 2 );
+ok( 'divi cold css: on PHP-FPM the purge also runs right after the response',
+	in_array( true, array_map( static fn( $cb ) => $cb instanceof Closure, $GLOBALS['actions']['shutdown'] ?? [] ), true ) );
 $GLOBALS['scheduled'] = [];
+$GLOBALS['actions']['shutdown'] = [];
 ( new Divi( $logger, [] ) )->guard_cold_css( $good_render );
+ok( 'divi cold css: a good render queues no purge after the response', [] === $GLOBALS['actions']['shutdown'] );
 ok( 'divi cold css: a good render schedules nothing', [] === $GLOBALS['scheduled'] );
 $_SERVER['HTTP_HOST'] = 'evil.com/<x>';
 ok( 'divi cold css: a malformed host is never purged', null === Divi::request_url() );

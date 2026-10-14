@@ -52,6 +52,21 @@ $transient = (object) [ 'response' => [], 'no_update' => [] ];
 $out = $u2->inject( $transient );
 ok( 'update: nothing injected without a release', [] === $out->response );
 
+// Right after an update the old code is still running: the version on disk
+// (WordPress's "checked" list) decides, not the constant in memory.
+set_site_transient( 'rcrocket_update_check', [
+	'version' => '0.12.5', 'package' => 'https://example.com/rc-rocket-0.12.5.zip', 'requires' => '6.5',
+	'requires_php' => '8.1', 'tested' => '7.1', 'changelog' => '', 'url' => '', 'description' => '',
+], 3600 );
+$stale    = new Updater( $file, '0.12.4', $logger );
+$after    = $stale->inject( (object) [ 'response' => [], 'no_update' => [], 'checked' => [ 'rc-rocket/rc-rocket.php' => '0.12.5' ] ] );
+ok( 'update: the release just installed is not offered again', ! isset( $after->response['rc-rocket/rc-rocket.php'] ) && isset( $after->no_update['rc-rocket/rc-rocket.php'] ) );
+$before   = $stale->inject( (object) [ 'response' => [], 'no_update' => [], 'checked' => [ 'rc-rocket/rc-rocket.php' => '0.12.4' ] ] );
+ok( 'update: a newer release is still offered', isset( $before->response['rc-rocket/rc-rocket.php'] ) );
+$nochk    = $stale->inject( (object) [ 'response' => [], 'no_update' => [] ] );
+ok( 'update: without a checked list the running version is used', isset( $nochk->response['rc-rocket/rc-rocket.php'] ) );
+delete_transient( 'rcrocket_update_check' );
+
 // Non-objects must pass straight through: WordPress passes false early on.
 ok( 'update: a false transient is returned untouched', false === $u2->inject( false ) );
 

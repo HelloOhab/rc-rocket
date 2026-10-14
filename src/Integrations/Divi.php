@@ -29,8 +29,11 @@ final class Divi {
 	/** Cron hook that drops a page Divi rendered mid-rebuild from the host cache. */
 	public const COLD_PURGE_HOOK = 'rc-rocket/divi/purge-cold-page';
 
-	/** Seconds to wait: long enough for the host to have stored it and Divi to finish. */
-	public const COLD_PURGE_DELAY = 30;
+	/** Backup purge by cron: long enough for the host to have stored it and Divi to finish. */
+	public const COLD_PURGE_DELAY = 60;
+
+	/** Seconds after the response is sent before the inline purge: the host has stored it by then. */
+	public const COLD_PURGE_SETTLE = 2;
 
 	/** Query args that mean "this is the builder, not the site". */
 	private const BUILDER_ARGS = [
@@ -323,7 +326,7 @@ final class Divi {
 	 * The page itself is still served — it is only this one copy that must not
 	 * be stored, or the host serves it to everyone for hours. RC Rocket's own
 	 * cache and most page caches honour the no-cache headers; Kinsta does not,
-	 * so the URL is also purged from the host cache shortly afterwards.
+	 * so the URL is also purged from the host cache straight afterwards.
 	 */
 	public function guard_cold_css( string $html ): string {
 		if ( ! self::is_cold_render( $html ) ) {
@@ -344,17 +347,52 @@ final class Divi {
 		// Kinsta's server and edge caches ignore the headers above (seen on
 		// yourhomesolar.com: stored anyway, Cache-Control rewritten to
 		// s-maxage=86400). So drop this one URL from the host cache once the
-		// response has been stored and Divi has had time to finish; the next
-		// visitor then gets, and caches, the proper page.
+		// response has been stored; the next visitor then gets, and caches,
+		// the proper page.
 		$url = self::request_url();
 
-		if ( null !== $url && ! wp_next_scheduled( self::COLD_PURGE_HOOK, [ $url ] ) ) {
-			wp_schedule_single_event( time() + self::COLD_PURGE_DELAY, self::COLD_PURGE_HOOK, [ $url ] );
+		if ( null !== $url ) {
+			// First choice: in this request, right after the visitor has the
+			// page. Every broken copy removes itself, so the cycle ends on
+			// the first request after Divi finishes. A cron event alone was
+			// not enough: on the beta sites the first purge per page ran, but
+			// the follow-up for a page re-cached mid-rebuild often never did.
+			$this->purge_after_response( $url );
+
+			// Backup for servers without PHP-FPM, where the response cannot
+			// be finished early.
+			if ( ! wp_next_scheduled( self::COLD_PURGE_HOOK, [ $url ] ) ) {
+				wp_schedule_single_event( time() + self::COLD_PURGE_DELAY, self::COLD_PURGE_HOOK, [ $url ] );
+			}
 		}
 
 		$this->logger->debug( 'Divi CSS was rebuilding: this response is not cached', [ 'url' => $url ] );
 
 		return $html;
+	}
+
+	/**
+	 * Purge $url from the host cache once this response has gone out.
+	 *
+	 * Runs last on shutdown: the visitor's page is finished with
+	 * fastcgi_finish_request(), the host has a moment to store it, then the
+	 * single-URL purge goes out. Only on PHP-FPM (Kinsta and most managed
+	 * hosts); elsewhere the visitor would wait, so the cron backup is used.
+	 */
+	private function purge_after_response( string $url ): void {
+		if ( ! function_exists( 'fastcgi_finish_request' ) ) {
+			return;
+		}
+
+		add_action(
+			'shutdown',
+			static function () use ( $url ): void {
+				fastcgi_finish_request();
+				sleep( self::COLD_PURGE_SETTLE );
+				do_action( self::COLD_PURGE_HOOK, $url );
+			},
+			PHP_INT_MAX
+		);
 	}
 
 	/**
