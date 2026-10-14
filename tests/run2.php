@@ -218,6 +218,19 @@ ok( 'divi cold css: Critical CSS off is never flagged', ! Divi::is_cold_render( 
 ok( 'divi cold css: a page without deferred CSS is never flagged', ! Divi::is_cold_render( $archive ) );
 ok( 'divi cold css: a non-Divi page is never flagged', ! Divi::is_cold_render( $doc ) );
 
+// yourhomesolar.com /contact/: no below-the-fold Divi styles, so no deferred
+// stylesheet either way. Cold: Theme Builder styles inline, no critical block.
+$cold_no_deferred = '<html><head>'
+	. '<link rel="stylesheet" href="https://example.com/wp-content/et-cache/73/et-divi-dynamic-tb-8322-tb-8430-73-late.css">'
+	. '<style id="et-core-unified-tb-8322-tb-8430-73-cached-inline-styles">.a{}</style>'
+	. '</head><body>' . str_repeat( 'x ', 200 ) . '</body></html>';
+$good_no_deferred = str_replace( '</head>', '<style id="et-critical-inline-css">.a{}</style></head>', $cold_no_deferred );
+ok( 'divi cold css: with Critical CSS on, a Divi page missing its critical block is flagged',
+	Divi::is_cold_render( $cold_no_deferred, true ) );
+ok( 'divi cold css: but not when Critical CSS is off', ! Divi::is_cold_render( $cold_no_deferred, false ) );
+ok( 'divi cold css: and never when the critical block is there', ! Divi::is_cold_render( $good_no_deferred, true ) );
+ok( 'divi cold css: a non-Divi page is not flagged even with Critical CSS on', ! Divi::is_cold_render( $doc, true ) );
+
 $guard = new Divi( $logger, [] );
 ok( 'divi cold css: guard leaves good markup untouched and cacheable',
 	$guard->guard_cold_css( $good_render ) === $good_render && ! $guard->rendered_cold() && 'divi-css-rebuilding' !== $guard->bypass_reason() );
@@ -245,6 +258,17 @@ ok( 'divi cold css: a good render queues no purge after the response', [] === $G
 ok( 'divi cold css: a good render schedules nothing', [] === $GLOBALS['scheduled'] );
 $_SERVER['HTTP_HOST'] = 'evil.com/<x>';
 ok( 'divi cold css: a malformed host is never purged', null === Divi::request_url() );
+// Safety brake: a page Divi always renders without critical CSS stops being
+// flagged after COLD_LIMIT tries and is cached normally again.
+$_SERVER['HTTP_HOST']   = 'example.com';
+$_SERVER['REQUEST_URI'] = '/always-cold/';
+$flags = 0;
+for ( $i = 0; $i < Divi::COLD_LIMIT + 2; $i++ ) {
+	$d = new Divi( $logger, [] );
+	$d->guard_cold_css( $cold_render );
+	$flags += $d->rendered_cold() ? 1 : 0;
+}
+ok( 'divi cold css: a page that is always "cold" is only flagged a few times', Divi::COLD_LIMIT - 1 === $flags, (string) $flags );
 unset( $_SERVER['HTTP_HOST'], $_SERVER['REQUEST_URI'] );
 ok( 'divi cold css: nothing to purge outside a request', null === Divi::request_url() );
 
