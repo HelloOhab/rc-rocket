@@ -119,6 +119,14 @@ From switching a Divi 4 site from WP Rocket to RC Rocket.
   script on the page calls it straight away (for example a form that sends
   a "Lead" event to fbq), so nothing breaks. Part of "Also delay tracking
   snippets and invisible reCAPTCHA" on the JavaScript tab, on by default.
+* New: updates work with no setup. RC Rocket now finds new versions in
+  its public GitHub repository by itself, like any other plugin, so
+  nothing has to be added to wp-config.php. Sites on 0.12.2 or older need
+  this version uploaded by hand once; after that they update themselves.
+* New: "Get test versions early" (Safety tab → Updates) puts a test site on
+  the beta channel, replacing the RC_ROCKET_UPDATE_CHANNEL line. Settings
+  imported from another site never change this. wp-config.php constants
+  still work and take priority.
 
 = 0.12.2 =
 From testing 0.12.1 on rhythmco.com (Divi 5) and americanhomesiding.com (Divi 4).

@@ -540,9 +540,9 @@ final class RestController {
 
 		$settings->merge( $payload );
 
-		// Switching Safe mode on and off is not tuning: the level stays.
+		// Switching Safe mode or the update channel is not tuning: the level stays.
 		$tuning = static function ( array $all ): array {
-			unset( $all['general']['safe_mode'], $all['general']['preset'] );
+			unset( $all['general']['safe_mode'], $all['general']['preset'], $all['general']['beta_updates'] );
 
 			return $all;
 		};

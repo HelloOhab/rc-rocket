@@ -13,18 +13,33 @@ $file   = '/wp/wp-content/plugins/rc-rocket/rc-rocket.php';
 
 // ============ 24. Updater ============
 
-$u = new Updater( $file, '0.5.1', $logger );
-ok( 'update: dormant with no source configured', ! $u->configured() );
+// No wp-config.php lines at all: updates come from the public repository,
+// like any other plugin, and the channel follows the plugin's own setting.
+$settings = new RCRocket\Support\Settings();
+$settings->add_defaults( 'general', [ 'beta_updates' => false ] );
+$u = new Updater( $file, '0.5.1', $logger, $settings );
+ok( 'update: works with nothing in wp-config.php', $u->configured() );
 ok( 'update: slug is the plugin folder', 'rc-rocket' === $u->slug(), $u->slug() );
 ok( 'update: basename is folder/file', 'rc-rocket/rc-rocket.php' === $u->basename(), $u->basename() );
 
 $report = $u->report();
-ok( 'update: report says unconfigured', false === $report['configured'] );
+ok( 'update: report names the built-in repository', 'github:HelloOhab/rc-rocket' === $report['source'], (string) $report['source'] );
+ok( 'update: stable unless the site opts in', 'stable' === $u->channel() );
+$settings->set( 'general.beta_updates', true );
+ok( 'update: "Get test versions early" puts the site on beta', 'beta' === $u->channel() );
+$settings->set( 'general.beta_updates', false );
+ok( 'update: and unticking it puts it back on stable', 'stable' === $u->channel() );
+// Settings copied from a test site must not move a client site to beta.
+$settings->import( json_encode( [ 'general' => [ 'beta_updates' => true ] ] ) );
+ok( 'update: importing settings keeps this site\'s channel', 'stable' === $u->channel() );
+ok( 'update: an updater without settings stays stable', 'stable' === ( new Updater( $file, '0.5.1', $logger ) )->channel() );
 
 // A manifest source, served from a local file through the stubbed fetcher.
 define( 'RC_ROCKET_UPDATE_URL', 'https://updates.example.com/rc-rocket.json' );
 $u2 = new Updater( $file, '0.5.1', $logger );
 ok( 'update: configured once a url exists', $u2->configured() );
+ok( 'update: a manifest in wp-config.php wins over the built-in repository',
+	'https://updates.example.com/rc-rocket.json' === $u2->report()['source'], (string) $u2->report()['source'] );
 
 // With no network the check must fail quietly, never fatally, and never claim
 // an update exists.
@@ -74,5 +89,7 @@ ok( 'update: beta takes the newest pre-release and skips drafts', 'v0.12.1' === 
 ok( 'update: beta survives a malformed list', null === $u2->newest_release( '{"message":"Not Found"}' ) );
 define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );
 ok( 'update: channel follows the constant', 'beta' === $u2->channel() );
+ok( 'update: the constant beats the setting', 'beta' === $u->channel() );
+ok( 'update: and the System check says so', true === $u->report()['channel_locked'] );
 
 report();

@@ -1408,6 +1408,16 @@
       ),
       wp.element.createElement(
         H,
+        { title: "Updates", initialOpen: !0 },
+        wp.element.createElement(E, {
+          label: "Get test versions early",
+          help: "For test sites only. This site is also offered pre-releases, so a new version can be checked here before every other site gets it. Leave it off on client sites: they only get versions marked ready. New versions show up in Dashboard → Updates without any setup in wp-config.php.",
+          checked: !!f.beta_updates,
+          onChange: (e) => n("general", "beta_updates", e),
+        }),
+      ),
+      wp.element.createElement(
+        H,
         { title: "Automatic rollback", initialOpen: !0 },
         wp.element.createElement(E, {
           label: "Watch for JavaScript errors from real visitors",

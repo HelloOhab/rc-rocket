@@ -149,11 +149,18 @@ final class Settings {
 		// or the next request re-runs every migration over imported values.
 		$this->load();
 		$schema = $this->data['general']['schema_version'] ?? null;
+		// Same for the update channel: settings copied from a test site must
+		// not put a production site on pre-releases.
+		$beta = (bool) ( $this->data['general']['beta_updates'] ?? false );
 
 		$this->data = self::deep_merge( $this->defaults, $this->conform( $decoded ) );
 
 		if ( null !== $schema ) {
 			$this->data['general']['schema_version'] = $schema;
+		}
+
+		if ( isset( $this->data['general'] ) && is_array( $this->data['general'] ) ) {
+			$this->data['general']['beta_updates'] = $beta;
 		}
 
 		// Mark as loaded before saving. save() calls load(), and load() would

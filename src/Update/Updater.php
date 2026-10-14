@@ -26,22 +26,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   work with a token, which is downloaded with an auth header rather than
  *   being embedded in a URL that would end up in logs.
  *
- * Configure in wp-config.php:
+ * Nothing to configure: with no constants defined, updates come from the
+ * public GitHub repository below, like any other plugin's updates. A site
+ * is put on the beta channel from the plugin's own settings ("Get test
+ * versions early"), which also offers GitHub pre-releases, so a release can
+ * reach a few test sites first. Every other site only sees full releases.
+ *
+ * wp-config.php constants still override everything, for the odd site that
+ * needs it:
  *
  *   define( 'RC_ROCKET_UPDATE_URL', 'https://updates.example.com/rc-rocket.json' );
- *
- * or:
- *
- *   define( 'RC_ROCKET_UPDATE_GITHUB', 'youragency/rc-rocket' );
+ *   define( 'RC_ROCKET_UPDATE_GITHUB', 'youragency/rc-rocket' ); // '' switches updates off
  *   define( 'RC_ROCKET_UPDATE_TOKEN', 'ghp_...' );   // private repos only
- *   define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );     // test sites only
- *
- * The beta channel also offers GitHub pre-releases, so a release can reach
- * a few test sites first. Every other site only sees full releases.
- *
- * With neither defined the updater stays completely dormant.
+ *   define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );     // or 'stable'; beats the setting
  */
 final class Updater {
+
+	/** Where releases come from when wp-config.php says nothing. */
+	public const DEFAULT_REPOSITORY = 'HelloOhab/rc-rocket';
 
 	private const TRANSIENT = 'rcrocket_update_check';
 	private const TTL       = 6 * HOUR_IN_SECONDS;
@@ -49,7 +51,8 @@ final class Updater {
 	public function __construct(
 		private string $file,
 		private string $version,
-		private Logger $logger
+		private Logger $logger,
+		private ?\RCRocket\Support\Settings $settings = null
 	) {}
 
 	public function hooks(): void {
@@ -62,6 +65,22 @@ final class Updater {
 		add_filter( 'upgrader_pre_download', [ $this, 'download_private' ], 10, 4 );
 		add_filter( 'upgrader_source_selection', [ $this, 'fix_folder_name' ], 10, 4 );
 		add_action( 'rc-rocket/update/flush', [ $this, 'flush' ] );
+
+		// Switching a site on or off the beta channel should show the right
+		// version straight away, not after the 6-hour cache runs out.
+		add_action(
+			'rc-rocket/settings/before_save',
+			function ( mixed $next, mixed $previous ): void {
+				$was = is_array( $previous ) && ! empty( $previous['general']['beta_updates'] );
+				$now = is_array( $next ) && ! empty( $next['general']['beta_updates'] );
+
+				if ( $was !== $now ) {
+					$this->flush();
+				}
+			},
+			10,
+			2
+		);
 
 		// A release should reach 30 sites without anyone clicking 30 times.
 		add_filter( 'auto_update_plugin', [ $this, 'allow_auto_update' ], 10, 2 );
@@ -87,7 +106,13 @@ final class Updater {
 	}
 
 	private function repository(): string {
-		$repo = defined( 'RC_ROCKET_UPDATE_GITHUB' ) ? (string) RC_ROCKET_UPDATE_GITHUB : '';
+		if ( defined( 'RC_ROCKET_UPDATE_GITHUB' ) ) {
+			$repo = (string) RC_ROCKET_UPDATE_GITHUB;
+		} else {
+			// A site pointed at its own manifest keeps it; everyone else gets
+			// the public repository without touching wp-config.php.
+			$repo = '' !== $this->manifest_url() ? '' : self::DEFAULT_REPOSITORY;
+		}
 
 		/** @param string $repo */
 		return (string) apply_filters( 'rc-rocket/update/repository', $repo );
@@ -175,7 +200,11 @@ final class Updater {
 	}
 
 	public function channel(): string {
-		$channel = defined( 'RC_ROCKET_UPDATE_CHANNEL' ) ? (string) RC_ROCKET_UPDATE_CHANNEL : 'stable';
+		if ( defined( 'RC_ROCKET_UPDATE_CHANNEL' ) ) {
+			$channel = (string) RC_ROCKET_UPDATE_CHANNEL;
+		} else {
+			$channel = $this->settings instanceof \RCRocket\Support\Settings && $this->settings->enabled( 'general.beta_updates' ) ? 'beta' : 'stable';
+		}
 
 		/** @param string $channel "stable" or "beta". */
 		return 'beta' === apply_filters( 'rc-rocket/update/channel', $channel ) ? 'beta' : 'stable';
@@ -472,6 +501,7 @@ final class Updater {
 			'configured' => $this->configured(),
 			'source'     => '' !== $this->repository() ? 'github:' . $this->repository() : $this->manifest_url(),
 			'channel'    => $this->channel(),
+			'channel_locked' => defined( 'RC_ROCKET_UPDATE_CHANNEL' ),
 			'installed'  => $this->version,
 			'available'  => $release['version'] ?? null,
 			'update'     => null !== $release && version_compare( $release['version'], $this->version, '>' ),

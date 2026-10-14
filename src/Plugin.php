@@ -362,7 +362,7 @@ final class Plugin {
 
 		$this->container->set(
 			'updater',
-			static fn( Container $c ): Updater => new Updater( RCROCKET_FILE, VERSION, $c->get( 'logger' ) )
+			static fn( Container $c ): Updater => new Updater( RCROCKET_FILE, VERSION, $c->get( 'logger' ), $c->get( 'settings' ) )
 		);
 
 		$this->container->set(
@@ -405,6 +405,8 @@ final class Plugin {
 				'skip_logged_in'         => true,
 				'schema_version'         => 0,
 				'preset'                 => 'recommended',
+				// Test sites tick this to get pre-releases first.
+				'beta_updates'           => false,
 			]
 		);
 
