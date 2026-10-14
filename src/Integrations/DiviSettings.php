@@ -40,7 +40,7 @@ final class DiviSettings {
 		],
 		'critical_css'      => [
 			'label' => 'Critical CSS',
-			'keys'  => [ 'et_pb_critical_css', 'critical_css_enabled', 'et_pb_critical_css_enabled' ],
+			'keys'  => [ 'divi_critical_css', 'et_pb_critical_css', 'critical_css_enabled', 'et_pb_critical_css_enabled' ],
 			'good'  => 'on',
 		],
 		'dynamic_css'       => [

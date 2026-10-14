@@ -190,6 +190,11 @@ ok( 'divi 5: gating takes over data-src cleanly',
 
 // ==================== 9b. Divi CSS rebuilding (cold renders) ====================
 
+// PHP-FPM's early finish, as on Kinsta. The CLI has no such function.
+if ( ! function_exists( 'fastcgi_finish_request' ) ) {
+	function fastcgi_finish_request(): bool { return true; }
+}
+
 // Trimmed from real responses: yourhomesolar.com /faq/ (Divi 4) and
 // rhythmco.com / (Divi 5), fresh render vs the copy Kinsta cached while Divi
 // was rebuilding its CSS.
@@ -213,6 +218,19 @@ ok( 'divi cold css: Critical CSS off is never flagged', ! Divi::is_cold_render( 
 ok( 'divi cold css: a page without deferred CSS is never flagged', ! Divi::is_cold_render( $archive ) );
 ok( 'divi cold css: a non-Divi page is never flagged', ! Divi::is_cold_render( $doc ) );
 
+// yourhomesolar.com /contact/: no below-the-fold Divi styles, so no deferred
+// stylesheet either way. Cold: Theme Builder styles inline, no critical block.
+$cold_no_deferred = '<html><head>'
+	. '<link rel="stylesheet" href="https://example.com/wp-content/et-cache/73/et-divi-dynamic-tb-8322-tb-8430-73-late.css">'
+	. '<style id="et-core-unified-tb-8322-tb-8430-73-cached-inline-styles">.a{}</style>'
+	. '</head><body>' . str_repeat( 'x ', 200 ) . '</body></html>';
+$good_no_deferred = str_replace( '</head>', '<style id="et-critical-inline-css">.a{}</style></head>', $cold_no_deferred );
+ok( 'divi cold css: with Critical CSS on, a Divi page missing its critical block is flagged',
+	Divi::is_cold_render( $cold_no_deferred, true ) );
+ok( 'divi cold css: but not when Critical CSS is off', ! Divi::is_cold_render( $cold_no_deferred, false ) );
+ok( 'divi cold css: and never when the critical block is there', ! Divi::is_cold_render( $good_no_deferred, true ) );
+ok( 'divi cold css: a non-Divi page is not flagged even with Critical CSS on', ! Divi::is_cold_render( $doc, true ) );
+
 $guard = new Divi( $logger, [] );
 ok( 'divi cold css: guard leaves good markup untouched and cacheable',
 	$guard->guard_cold_css( $good_render ) === $good_render && ! $guard->rendered_cold() && 'divi-css-rebuilding' !== $guard->bypass_reason() );
@@ -231,11 +249,26 @@ ok( 'divi cold css: schedules a purge of that one page',
 	json_encode( $job ) );
 ok( 'divi cold css: the purge waits for the host to store the page',
 	( $job[0] ?? 0 ) >= time() + Divi::COLD_PURGE_DELAY - 2 );
+ok( 'divi cold css: on PHP-FPM the purge also runs right after the response',
+	in_array( true, array_map( static fn( $cb ) => $cb instanceof Closure, $GLOBALS['actions']['shutdown'] ?? [] ), true ) );
 $GLOBALS['scheduled'] = [];
+$GLOBALS['actions']['shutdown'] = [];
 ( new Divi( $logger, [] ) )->guard_cold_css( $good_render );
+ok( 'divi cold css: a good render queues no purge after the response', [] === $GLOBALS['actions']['shutdown'] );
 ok( 'divi cold css: a good render schedules nothing', [] === $GLOBALS['scheduled'] );
 $_SERVER['HTTP_HOST'] = 'evil.com/<x>';
 ok( 'divi cold css: a malformed host is never purged', null === Divi::request_url() );
+// Safety brake: a page Divi always renders without critical CSS stops being
+// flagged after COLD_LIMIT tries and is cached normally again.
+$_SERVER['HTTP_HOST']   = 'example.com';
+$_SERVER['REQUEST_URI'] = '/always-cold/';
+$flags = 0;
+for ( $i = 0; $i < Divi::COLD_LIMIT + 2; $i++ ) {
+	$d = new Divi( $logger, [] );
+	$d->guard_cold_css( $cold_render );
+	$flags += $d->rendered_cold() ? 1 : 0;
+}
+ok( 'divi cold css: a page that is always "cold" is only flagged a few times', Divi::COLD_LIMIT - 1 === $flags, (string) $flags );
 unset( $_SERVER['HTTP_HOST'], $_SERVER['REQUEST_URI'] );
 ok( 'divi cold css: nothing to purge outside a request', null === Divi::request_url() );
 

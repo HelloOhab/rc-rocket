@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.5
+Stable tag: 0.12.6
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,23 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.6 =
+From updating the three beta sites to 0.12.5.
+* Fix: a Divi page cached while Divi was rebuilding its CSS is now cleared
+  from Kinsta's cache two seconds after it is sent, in the same request,
+  instead of only by a scheduled task. On the beta sites the scheduled
+  clear worked the first time but often never ran when a page was cached
+  broken a second time. The scheduled clear stays as a backup.
+* Fix: also catches a page with no below-the-fold Divi styles (for example
+  a short contact page) rendered mid-rebuild; 0.12.4 and 0.12.5 only
+  caught pages that use Divi's deferred stylesheet. A page that keeps
+  coming back without critical CSS is cached normally again after six
+  tries, so nothing can get stuck clearing itself.
+* Fix: the System check now reads Divi's Critical CSS switch correctly.
+* Fix: right after updating RC Rocket, WordPress no longer offers the
+  version that was just installed as an update (it did for up to 12
+  hours).
 
 = 0.12.5 =
 From checking 0.12.4 on the three beta sites.

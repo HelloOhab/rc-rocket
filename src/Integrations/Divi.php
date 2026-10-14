@@ -29,8 +29,11 @@ final class Divi {
 	/** Cron hook that drops a page Divi rendered mid-rebuild from the host cache. */
 	public const COLD_PURGE_HOOK = 'rc-rocket/divi/purge-cold-page';
 
-	/** Seconds to wait: long enough for the host to have stored it and Divi to finish. */
-	public const COLD_PURGE_DELAY = 30;
+	/** Backup purge by cron: long enough for the host to have stored it and Divi to finish. */
+	public const COLD_PURGE_DELAY = 60;
+
+	/** Seconds after the response is sent before the inline purge: the host has stored it by then. */
+	public const COLD_PURGE_SETTLE = 2;
 
 	/** Query args that mean "this is the builder, not the site". */
 	private const BUILDER_ARGS = [
@@ -323,10 +326,16 @@ final class Divi {
 	 * The page itself is still served — it is only this one copy that must not
 	 * be stored, or the host serves it to everyone for hours. RC Rocket's own
 	 * cache and most page caches honour the no-cache headers; Kinsta does not,
-	 * so the URL is also purged from the host cache shortly afterwards.
+	 * so the URL is also purged from the host cache straight afterwards.
 	 */
 	public function guard_cold_css( string $html ): string {
-		if ( ! self::is_cold_render( $html ) ) {
+		if ( ! self::is_cold_render( $html, $this->critical_css_on() ) ) {
+			return $html;
+		}
+
+		$url = self::request_url();
+
+		if ( null !== $url && $this->over_cold_limit( $url ) ) {
 			return $html;
 		}
 
@@ -344,17 +353,50 @@ final class Divi {
 		// Kinsta's server and edge caches ignore the headers above (seen on
 		// yourhomesolar.com: stored anyway, Cache-Control rewritten to
 		// s-maxage=86400). So drop this one URL from the host cache once the
-		// response has been stored and Divi has had time to finish; the next
-		// visitor then gets, and caches, the proper page.
-		$url = self::request_url();
+		// response has been stored; the next visitor then gets, and caches,
+		// the proper page.
+		if ( null !== $url ) {
+			// First choice: in this request, right after the visitor has the
+			// page. Every broken copy removes itself, so the cycle ends on
+			// the first request after Divi finishes. A cron event alone was
+			// not enough: on the beta sites the first purge per page ran, but
+			// the follow-up for a page re-cached mid-rebuild often never did.
+			$this->purge_after_response( $url );
 
-		if ( null !== $url && ! wp_next_scheduled( self::COLD_PURGE_HOOK, [ $url ] ) ) {
-			wp_schedule_single_event( time() + self::COLD_PURGE_DELAY, self::COLD_PURGE_HOOK, [ $url ] );
+			// Backup for servers without PHP-FPM, where the response cannot
+			// be finished early.
+			if ( ! wp_next_scheduled( self::COLD_PURGE_HOOK, [ $url ] ) ) {
+				wp_schedule_single_event( time() + self::COLD_PURGE_DELAY, self::COLD_PURGE_HOOK, [ $url ] );
+			}
 		}
 
 		$this->logger->debug( 'Divi CSS was rebuilding: this response is not cached', [ 'url' => $url ] );
 
 		return $html;
+	}
+
+	/**
+	 * Purge $url from the host cache once this response has gone out.
+	 *
+	 * Runs last on shutdown: the visitor's page is finished with
+	 * fastcgi_finish_request(), the host has a moment to store it, then the
+	 * single-URL purge goes out. Only on PHP-FPM (Kinsta and most managed
+	 * hosts); elsewhere the visitor would wait, so the cron backup is used.
+	 */
+	private function purge_after_response( string $url ): void {
+		if ( ! function_exists( 'fastcgi_finish_request' ) ) {
+			return;
+		}
+
+		add_action(
+			'shutdown',
+			static function () use ( $url ): void {
+				fastcgi_finish_request();
+				sleep( self::COLD_PURGE_SETTLE );
+				do_action( self::COLD_PURGE_HOOK, $url );
+			},
+			PHP_INT_MAX
+		);
 	}
 
 	/**
@@ -379,20 +421,74 @@ final class Divi {
 	}
 
 	/**
-	 * A page that uses Divi's deferred stylesheet but has no critical CSS
-	 * block was rendered before Divi finished generating its CSS.
+	 * Was this page rendered before Divi finished generating its CSS?
 	 *
-	 * Pages without the deferred stylesheet (Critical CSS off, archives,
-	 * non-Divi templates) never match, so they keep being cached as before.
+	 * Only ever when the critical CSS block is missing, and then:
+	 * - the page still uses Divi's deferred stylesheet (the half that goes
+	 *   with the critical block), whatever the settings say; or
+	 * - Divi's Critical CSS setting is on and the page is a Divi page. A page
+	 *   with no below-the-fold Divi styles has no deferred stylesheet, so the
+	 *   first test misses it (yourhomesolar.com /contact/).
+	 *
+	 * Critical CSS off, or a page Divi did not render, never matches.
 	 */
-	public static function is_cold_render( string $html ): bool {
-		// The deferred styles are a preloaded <link> on a good render and an
-		// inline <style> on a cold one, which Divi may print in the footer.
-		if ( ! preg_match( '/et-core-unified-[a-z0-9-]*deferred/i', $html ) ) {
+	public static function is_cold_render( string $html, bool $critical_css_on = false ): bool {
+		if ( preg_match( '/<style[^>]+id=["\']et-critical-inline-css["\']/i', $html ) ) {
 			return false;
 		}
 
-		return ! preg_match( '/<style[^>]+id=["\']et-critical-inline-css["\']/i', $html );
+		// The deferred styles are a preloaded <link> on a good render and an
+		// inline <style> on a cold one, which Divi may print in the footer.
+		if ( preg_match( '/et-core-unified-[a-z0-9-]*deferred/i', $html ) ) {
+			return true;
+		}
+
+		return $critical_css_on && (bool) preg_match( '/et-core-unified-|et-divi-dynamic-/i', $html );
+	}
+
+	/**
+	 * Divi's Critical CSS switch (Theme Options → Performance). Unknown counts
+	 * as off: without it only the deferred-stylesheet test applies.
+	 */
+	public function critical_css_on(): bool {
+		if ( ! function_exists( 'et_get_option' ) ) {
+			return false;
+		}
+
+		foreach ( [ 'divi_critical_css', 'et_pb_critical_css', 'critical_css_enabled', 'et_pb_critical_css_enabled' ] as $key ) {
+			$value = et_get_option( $key, 'rcr-missing' );
+
+			if ( 'rcr-missing' !== $value && '' !== $value && null !== $value ) {
+				return true === $value || in_array( strtolower( (string) $value ), [ 'on', 'yes', '1', 'true' ], true );
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Safety brake. A page flagged this many times in a row within the window
+	 * is treated as one Divi renders without critical CSS on purpose, and
+	 * cached normally again, so a wrong guess can never keep a page uncached
+	 * or purging itself on every visit.
+	 */
+	public const COLD_LIMIT        = 6;
+	public const COLD_LIMIT_WINDOW = 30 * MINUTE_IN_SECONDS;
+
+	private function over_cold_limit( string $url ): bool {
+		$key   = 'rcrocket_cold_' . md5( $url );
+		$count = (int) get_transient( $key ) + 1;
+
+		set_transient( $key, $count, self::COLD_LIMIT_WINDOW );
+
+		if ( $count === self::COLD_LIMIT ) {
+			$this->logger->error(
+				'Divi keeps rendering this page without critical CSS; caching it normally',
+				[ 'url' => $url ]
+			);
+		}
+
+		return $count >= self::COLD_LIMIT;
 	}
 
 	public function rendered_cold(): bool {

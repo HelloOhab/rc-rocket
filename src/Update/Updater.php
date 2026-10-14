@@ -380,7 +380,15 @@ final class Updater {
 			'banners'      => [],
 		];
 
-		if ( version_compare( $release['version'], $this->version, '>' ) ) {
+		// Compare with the version on disk. Right after an update, WordPress
+		// refreshes this transient in the same request that still runs the
+		// old code, so $this->version would offer the release just installed
+		// for up to 12 hours.
+		$installed = isset( $transient->checked[ $this->basename() ] ) && is_string( $transient->checked[ $this->basename() ] )
+			? $transient->checked[ $this->basename() ]
+			: $this->version;
+
+		if ( version_compare( $release['version'], $installed, '>' ) ) {
 			$transient->response[ $this->basename() ] = $item;
 		} else {
 			// Listing it here as well keeps "Check again" honest and lets
