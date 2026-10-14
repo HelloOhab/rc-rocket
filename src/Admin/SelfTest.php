@@ -207,8 +207,8 @@ final class SelfTest {
 				'updates',
 				'Updates',
 				self::WARN,
-				'No update source configured, so this install will never be told a new version exists.',
-				'Define RC_ROCKET_UPDATE_URL or RC_ROCKET_UPDATE_GITHUB in wp-config.php.'
+				'Updates are switched off in wp-config.php, so this install will never be told a new version exists.',
+				'Remove the empty RC_ROCKET_UPDATE_GITHUB line from wp-config.php to get updates again.'
 			);
 		} else {
 			$checks[] = $this->check(
@@ -219,6 +219,7 @@ final class SelfTest {
 					? sprintf( 'Version %s is available. This site is on %s.', (string) $update['available'], $update['installed'] )
 					: sprintf( 'On %s, the latest available.', $update['installed'] ) )
 					. ( 'beta' === ( $update['channel'] ?? 'stable' ) ? ' Beta channel: pre-releases are offered to this site.' : '' )
+					. ( ! empty( $update['channel_locked'] ) ? ' The channel is set in wp-config.php, which overrides "Get test versions early".' : '' )
 			);
 		}
 

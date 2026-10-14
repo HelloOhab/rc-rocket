@@ -877,8 +877,8 @@
           }),
         a.delay &&
           wp.element.createElement(x, {
-            label: "Also delay Google Tag Manager and invisible reCAPTCHA",
-            help: "Google Tag Manager (and the Analytics and Ads tags it loads) and WPForms' invisible reCAPTCHA start at the visitor's first scroll, tap or keypress, or after the time above. On a phone this made the main image appear about 1.5 seconds sooner. Visitors who leave within those seconds without touching the page are not counted in Analytics.",
+            label: "Also delay tracking snippets and invisible reCAPTCHA",
+            help: "Google Tag Manager (and the Analytics and Ads tags it loads), the Meta Pixel, Hotjar and WPForms' invisible reCAPTCHA start at the visitor's first scroll, tap or keypress, or after the time above. On a phone this made the main image appear about 1.5 seconds sooner. The Pixel and Hotjar stay on time if another script on the page needs them straight away. Visitors who leave within those seconds without touching the page are not counted.",
             checked: a.delay_tracking !== !1,
             onChange: i("delay_tracking"),
           }),
@@ -1405,6 +1405,16 @@
           ),
           " in wp-config.php if you are ever locked out.",
         ),
+      ),
+      wp.element.createElement(
+        H,
+        { title: "Updates", initialOpen: !0 },
+        wp.element.createElement(E, {
+          label: "Get test versions early",
+          help: "For test sites only. This site is also offered pre-releases, so a new version can be checked here before every other site gets it. Leave it off on client sites: they only get versions marked ready. New versions show up in Dashboard → Updates without any setup in wp-config.php.",
+          checked: !!f.beta_updates,
+          onChange: (e) => n("general", "beta_updates", e),
+        }),
       ),
       wp.element.createElement(
         H,

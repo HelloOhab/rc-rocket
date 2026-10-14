@@ -111,6 +111,35 @@ ok( 'delay: recaptcha v3 file waits', (bool) preg_match( '#rcrocket/delayed"[^>]
 ok( 'delay: recaptcha v3 setup moves with it', (bool) preg_match( '#rcrocket/delayed"[^>]*id="wpforms-recaptcha-js-after"#', $tout ) );
 ok( 'delay: other inline scripts still run on time', str_contains( $tout, '<script>var keep_me = 1;</script>' ) );
 
+// Meta Pixel and Hotjar snippets pasted into the page, as on a live Divi 4
+// site: they wait for the visitor too, unless an on-time script needs them.
+$hotjar = '<script>(function(h,o,t,j,a,r){h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};h._hjSettings={hjid:2913522,hjsv:6};a=o.getElementsByTagName(\'head\')[0];r=o.createElement(\'script\');r.async=1;r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;a.appendChild(r);})(window,document,\'https://static.hotjar.com/c/hotjar-\',\'.js?sv=\');</script>';
+$pixel  = '<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version=\'2.0\';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,\'script\',\'https://connect.facebook.net/en_US/fbevents.js\');fbq(\'init\',\'123\');fbq(\'track\',\'PageView\');</script>';
+$trk    = '<html><head>' . $hotjar . $pixel . '</head><body><script>var keep_me = 2;</script></body></html>';
+$trko   = $delay->invoke( $js, $trk, $c );
+ok( 'delay: hotjar snippet waits for the visitor', (bool) preg_match( '#<script type="rcrocket/delayed">\(function\(h,o,t,j,a,r\)#', $trko ), $trko );
+ok( 'delay: meta pixel snippet waits for the visitor', (bool) preg_match( '#<script type="rcrocket/delayed">!function\(f,b,e,v,n,t,s\)#', $trko ), $trko );
+ok( 'delay: the delay loader is added for them', str_contains( $trko, 'rcr-delay-loader' ) );
+ok( 'delay: unrelated inline code stays on time beside them', str_contains( $trko, '<script>var keep_me = 2;</script>' ) );
+
+// Another script calls fbq on time: the Pixel must stay, Hotjar can still wait.
+$needs  = str_replace( '<script>var keep_me = 2;</script>', '<script>document.addEventListener(\'wpformsAjaxSubmitSuccess\',function(){fbq(\'track\',\'Lead\');});</script>', $trk );
+$needso = $delay->invoke( $js, $needs, $c );
+ok( 'delay: pixel stays on time when another script calls fbq', str_contains( $needso, '<script>!function(f,b,e,v,n,t,s)' ), $needso );
+ok( 'delay: hotjar still waits in that case', (bool) preg_match( '#<script type="rcrocket/delayed">\(function\(h,o,t,j,a,r\)#', $needso ) );
+
+// And the reverse: a script talking to Hotjar keeps Hotjar on time only.
+$hjneed  = str_replace( '<script>var keep_me = 2;</script>', '<script>hj(\'event\',\'quote_page\');</script>', $trk );
+$hjneedo = $delay->invoke( $js, $hjneed, $c );
+ok( 'delay: hotjar stays on time when another script calls hj', str_contains( $hjneedo, '<script>(function(h,o,t,j,a,r)' ), $hjneedo );
+ok( 'delay: pixel still waits in that case', (bool) preg_match( '#<script type="rcrocket/delayed">!function\(f,b,e,v,n,t,s\)#', $hjneedo ) );
+
+$settings->merge( [ 'js' => [ 'delay_tracking' => false ] ] );
+$offo = $delay->invoke( $js, $trk, $c );
+ok( 'delay: pixel and hotjar are on time with the setting off',
+	str_contains( $offo, '<script>!function(f,b,e,v,n,t,s)' ) && str_contains( $offo, '<script>(function(h,o,t,j,a,r)' ) );
+$settings->merge( [ 'js' => [ 'delay_tracking' => true ] ] );
+
 $v2   = str_replace( 'api.js?render=KEY', 'api.js?onload=wpformsRecaptchaLoad&render=explicit', $track );
 $v2o  = $delay->invoke( $js, $v2, $c );
 ok( 'delay: recaptcha v2 file is left alone', ! preg_match( '#rcrocket/delayed"[^>]*id="wpforms-recaptcha-js"#', $v2o ) );

@@ -2,23 +2,29 @@
 
 ## One-time setup
 
-**1. Push the plugin to a repository.** The folder in the zip must be
-`rc-rocket`, which it is.
+Nothing to add to `wp-config.php`. Since 0.12.3 the plugin looks for
+releases in the public `HelloOhab/rc-rocket` repository by itself: upload
+the zip once (Plugins → Add Plugin → Upload) and new versions show up in
+Dashboard → Updates like any other plugin's.
 
-**2. Add the constants to each site's `wp-config.php`,** above the
-`/* That's all, stop editing! */` line:
-
-```php
-define( 'RC_ROCKET_UPDATE_GITHUB', 'youragency/rc-rocket' );
-define( 'RC_ROCKET_UPDATE_TOKEN', 'github_pat_...' );   // private repos only
-```
-
-**3. Verify on one site** — RC Rocket → System check → the Updates row should
-name the repository and the available version. Or over SSH:
+**Verify on one site:** RC Rocket → System check → the Updates row should
+name the installed version and say whether a newer one exists. Or over SSH:
 
     wp rc-rocket version --flush
 
-Only add the constants to the other 29 once that works.
+Sites still on 0.12.2 or older need the 0.12.3 zip uploaded by hand once
+(or the old `RC_ROCKET_UPDATE_GITHUB` line); from then on they update
+themselves.
+
+`wp-config.php` constants still work and override the built-in defaults,
+for a site that needs something different:
+
+```php
+define( 'RC_ROCKET_UPDATE_GITHUB', 'youragency/rc-rocket' ); // '' switches updates off
+define( 'RC_ROCKET_UPDATE_TOKEN', 'github_pat_...' );       // private repos only
+define( 'RC_ROCKET_UPDATE_URL', 'https://…/rc-rocket.json' ); // own manifest instead
+define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );                // overrides the setting
+```
 
 ## Publishing
 
@@ -35,11 +41,8 @@ If any test fails, no release is published. That is the point.
 ## Rolling out to the fleet
 
 Every release is published as a **pre-release**. Sites only see it if they
-are on the beta channel:
-
-```php
-define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );   // test sites only
-```
+are on the beta channel: RC Rocket → Advanced → Safety → Updates → tick
+**Get test versions early** (test sites only).
 
 1. Put two or three sites on the beta channel: at least one on Divi 4 and
    one on Divi 5, ideally on different hosts. System check → Updates says
@@ -59,7 +62,10 @@ waves, leave auto-updates off and update a batch at a time.
 
 ## Public or private?
 
-**Private repository** means a token in `wp-config.php` on all 30 sites. Tokens
+The repository is public, which is what lets the plugin update with no
+setup. If it ever goes private again:
+
+**Private repository** means a token in `wp-config.php` on every site. Tokens
 expire, so rotation means editing 30 files. Use a fine-grained token scoped to
 read-only Contents on that one repository.
 

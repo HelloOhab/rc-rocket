@@ -92,6 +92,10 @@ final class JsModule implements Module {
 			return true;
 		}
 
+		if ( '' !== self::tracker( $script ) ) {
+			return true;
+		}
+
 		if ( 'wpforms-recaptcha' === $script['handle'] ) {
 			if ( 'file' === $script['part'] ) {
 				return (bool) preg_match( '#google\.com/recaptcha/api\.js\?[^"\']*render=(?!explicit)#i', $attributes );
@@ -101,6 +105,87 @@ final class JsModule implements Module {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Inline tracker snippets pasted into a page (Divi → Integration, WPCode,
+	 * a header-footer plugin), keyed by name, with the globals other scripts
+	 * use to talk to them.
+	 *
+	 * Meta Pixel base code: defines the fbq queue, adds fbevents.js, then
+	 * calls init and PageView, which the queue holds until the file arrives.
+	 * Hotjar: defines the hj queue and _hjSettings, then adds its loader.
+	 * Measured on a Divi 4 desktop run: about 300 ms and 220 ms of main-thread
+	 * work at load, which WP Rocket's delay removed and RC Rocket did not.
+	 *
+	 * Both are only safe to hold back when nothing else on the page needs the
+	 * global on time: delay_scripts() checks that across the whole page.
+	 */
+	private const TRACKERS = [
+		'meta-pixel' => [ 'globals' => [ 'fbq(', 'fbq.', '_fbq' ] ],
+		'hotjar'     => [ 'globals' => [ 'hj(', '_hjSettings', 'window.hj' ] ],
+	];
+
+	/**
+	 * Which tracker an inline snippet is the loader for, or "".
+	 *
+	 * @param array<string, mixed> $script
+	 */
+	public static function tracker( array $script ): string {
+		if ( $script['src'] ) {
+			return '';
+		}
+
+		$code = (string) $script['code'];
+
+		if ( str_contains( $code, 'connect.facebook.net' ) && str_contains( $code, 'fbevents.js' ) && str_contains( $code, 'fbq' ) ) {
+			return 'meta-pixel';
+		}
+
+		if ( str_contains( $code, 'static.hotjar.com' ) && str_contains( $code, 'hjid' ) ) {
+			return 'hotjar';
+		}
+
+		return '';
+	}
+
+	/**
+	 * A tracker snippet may only wait for the visitor when no script that
+	 * stays on time reaches for its global. Otherwise that script throws
+	 * "fbq is not defined" (Meta's own plugin, WPForms conversion events),
+	 * and a stub would not help: the Pixel's base code returns early when
+	 * fbq already exists, so fbevents.js would never load.
+	 *
+	 * @param array<int, array<string, mixed>> $scripts
+	 * @param array<int, string>               $plan
+	 */
+	private static function keep_needed_trackers( array $scripts, array &$plan ): void {
+		foreach ( $scripts as $i => $script ) {
+			if ( 'delay' !== $plan[ $i ] ) {
+				continue;
+			}
+
+			$tracker = self::tracker( $script );
+
+			if ( '' === $tracker ) {
+				continue;
+			}
+
+			foreach ( $scripts as $j => $other ) {
+				if ( $j === $i || 'delay' === $plan[ $j ] ) {
+					continue;
+				}
+
+				$haystack = (string) $other['code'] . ' ' . (string) $other['attributes'];
+
+				foreach ( self::TRACKERS[ $tracker ]['globals'] as $global ) {
+					if ( str_contains( $haystack, $global ) ) {
+						$plan[ $i ] = 'keep';
+						continue 3;
+					}
+				}
+			}
+		}
 	}
 
 	public function label(): string {
@@ -113,9 +198,10 @@ final class JsModule implements Module {
 			'defer'              => true,
 			'delay'              => true,
 			'delay_timeout'      => 6,
-			// Google Tag Manager's container snippet and invisible reCAPTCHA
-			// v3 wait for the first interaction too, even on Divi sites,
-			// where other inline scripts never do.
+			// Google Tag Manager's container snippet, the Meta Pixel and Hotjar
+			// snippets, and invisible reCAPTCHA v3 wait for the first
+			// interaction too, even on Divi sites, where other inline scripts
+			// never do.
 			'delay_tracking'     => true,
 			'exclusions'         => Presets::js_exclusions(),
 			// content-visibility clips anything that overlaps a section edge and
@@ -274,6 +360,8 @@ final class JsModule implements Module {
 		}
 
 		$this->respect_dependencies( $scripts, $plan );
+
+		self::keep_needed_trackers( $scripts, $plan );
 
 		// reCAPTCHA's inline setup moves only together with its file (v3);
 		// for the v2 checkbox the file calls back into it straight away.

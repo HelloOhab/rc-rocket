@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.2
+Stable tag: 0.12.3
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,25 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.3 =
+From switching a Divi 4 site from WP Rocket to RC Rocket.
+* New: the Meta Pixel and Hotjar snippets pasted into a page (Divi →
+  Integration, WPCode and the like) now wait for the visitor's first
+  scroll, tap or keypress, like Google Tag Manager already did. On a Divi 4
+  desktop test they cost about 300 ms and 220 ms of main-thread work at
+  load, which WP Rocket had been delaying. Each stays on time when another
+  script on the page calls it straight away (for example a form that sends
+  a "Lead" event to fbq), so nothing breaks. Part of "Also delay tracking
+  snippets and invisible reCAPTCHA" on the JavaScript tab, on by default.
+* New: updates work with no setup. RC Rocket now finds new versions in
+  its public GitHub repository by itself, like any other plugin, so
+  nothing has to be added to wp-config.php. Sites on 0.12.2 or older need
+  this version uploaded by hand once; after that they update themselves.
+* New: "Get test versions early" (Safety tab → Updates) puts a test site on
+  the beta channel, replacing the RC_ROCKET_UPDATE_CHANNEL line. Settings
+  imported from another site never change this. wp-config.php constants
+  still work and take priority.
 
 = 0.12.2 =
 From testing 0.12.1 on rhythmco.com (Divi 5) and americanhomesiding.com (Divi 4).
