@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.4
+Stable tag: 0.12.5
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,15 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.5 =
+From checking 0.12.4 on the three beta sites.
+* Fix: on Kinsta, the 0.12.4 fix was not enough. Kinsta's server and edge
+  caches ignore "don't cache" headers, so a Divi page rendered while Divi
+  was rebuilding its CSS was still stored for up to a day. RC Rocket now
+  also clears that one page from Kinsta's cache about 30 seconds later (on
+  the next scheduled-task run), so the next visitor gets and caches the
+  proper page. Nothing else is purged.
 
 = 0.12.4 =
 From comparing three Divi sites after the 0.12.3 update.
