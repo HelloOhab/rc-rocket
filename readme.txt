@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.6
+Stable tag: 0.12.7
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,22 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.7 =
+From updating a WooCommerce site (ghostud.com) to 0.12.6.
+* Fix: on WooCommerce sites with "Preload links" on (the default), every
+  wp-admin page showed "There has been a critical error on this website".
+  Link preloading asked WordPress for the cart, checkout and account page
+  links while plugins were still loading, before WordPress's permalinks
+  exist. They are now looked up when a page is rendered. Present since
+  0.12.0; sites without WooCommerce were never affected.
+* Shop pages are still kept out of preloading, so a hover never empties a
+  cart or logs anyone out. A shop page set as the home page no longer
+  risks keeping every page out, and a link filter from another plugin that
+  fails now skips that one page instead of stopping the site.
+* New test suite (tests/run10.php) boots link preloading the way WordPress
+  does, on a plain site and on a WooCommerce shop, on both WordPress 6.8+
+  and older versions.
 
 = 0.12.6 =
 From updating the three beta sites to 0.12.5.
