@@ -33,7 +33,7 @@ define( 'RC_ROCKET_UPDATE_CHANNEL', 'beta' );                // overrides the se
     git push origin v0.6.1
 
 The workflow in `.github/workflows/release.yml` refuses to build if the tag
-does not match the plugin header, lints every file, runs all nine test suites,
+does not match the plugin header, lints every file, runs every test suite,
 and attaches the zip to the release.
 
 If any test fails, no release is published. That is the point.

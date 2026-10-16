@@ -143,7 +143,18 @@ final class PreloadModule implements Module {
 	private function link_preloading( array $config, SafeMode $safe ): void {
 		$mode      = in_array( $config['links_mode'] ?? '', [ 'prefetch', 'prerender' ], true ) ? (string) $config['links_mode'] : 'prefetch';
 		$eagerness = in_array( $config['links_eagerness'] ?? '', [ 'conservative', 'moderate', 'eager' ], true ) ? (string) $config['links_eagerness'] : 'moderate';
-		$exclude   = $this->exclusions( (array) ( $config['links_exclusions'] ?? [] ) );
+		$user      = (array) ( $config['links_exclusions'] ?? [] );
+
+		// Built the first time a rule is printed, never here: this method runs
+		// at plugins_loaded, before WordPress has its permalink system, and
+		// asking for a page's link that early is a fatal error (the shop's
+		// cart and checkout pages, on every WooCommerce site, wp-admin
+		// included). By wp_head everything is loaded.
+		$exclude = static function () use ( $user ): array {
+			static $paths = null;
+
+			return $paths ??= self::exclusions( $user );
+		};
 
 		// WordPress 6.8+ ships the API: configure it rather than add a second
 		// set of rules beside it.
@@ -167,7 +178,7 @@ final class PreloadModule implements Module {
 
 			add_filter(
 				'wp_speculation_rules_href_exclude_paths',
-				static fn( array $paths ): array => array_values( array_unique( array_merge( $paths, $exclude ) ) ),
+				static fn( array $paths ): array => array_values( array_unique( array_merge( $paths, $exclude() ) ) ),
 				20
 			);
 
@@ -184,7 +195,7 @@ final class PreloadModule implements Module {
 
 				$base  = (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH );
 				$base  = '/' === $base ? '' : untrailingslashit( $base );
-				$paths = array_map( static fn( string $p ): string => $base . $p, array_merge( [ '/wp-content/*', '/wp-includes/*', '/*\\?(.+)' ], $exclude ) );
+				$paths = array_map( static fn( string $p ): string => $base . $p, array_merge( [ '/wp-content/*', '/wp-includes/*', '/*\\?(.+)' ], $exclude() ) );
 
 				$rules = [
 					$mode => [
@@ -215,21 +226,11 @@ final class PreloadModule implements Module {
 	 * @param string[] $user
 	 * @return string[]
 	 */
-	private function exclusions( array $user ): array {
+	public static function exclusions( array $user ): array {
 		$paths = self::ALWAYS_EXCLUDE;
 
-		if ( function_exists( 'wc_get_page_id' ) ) {
-			foreach ( [ 'cart', 'checkout', 'myaccount' ] as $page ) {
-				$id = (int) wc_get_page_id( $page );
-
-				if ( $id > 0 ) {
-					$path = (string) wp_parse_url( (string) get_permalink( $id ), PHP_URL_PATH );
-
-					if ( '' !== $path && '/' !== $path ) {
-						$paths[] = untrailingslashit( $path ) . '*';
-					}
-				}
-			}
+		foreach ( self::shop_paths() as $path ) {
+			$paths[] = $path;
 		}
 
 		foreach ( $user as $pattern ) {
@@ -246,6 +247,58 @@ final class PreloadModule implements Module {
 		}
 
 		return array_values( array_unique( $paths ) );
+	}
+
+	/**
+	 * The cart, checkout and account pages of a WooCommerce shop, as
+	 * "/checkout*" patterns. Speculatively loading them would empty a cart
+	 * or log someone out.
+	 *
+	 * Never lets a shop page break the site: before WordPress has set up its
+	 * permalinks the page's own path is used, and anything a third-party
+	 * filter throws while building a link is ignored for that page.
+	 *
+	 * @return string[]
+	 */
+	public static function shop_paths(): array {
+		if ( ! function_exists( 'wc_get_page_id' ) ) {
+			return [];
+		}
+
+		$paths = [];
+
+		foreach ( [ 'cart', 'checkout', 'myaccount' ] as $page ) {
+			try {
+				$id = (int) wc_get_page_id( $page );
+
+				if ( $id <= 0 ) {
+					continue;
+				}
+
+				if ( self::permalinks_ready() ) {
+					$url = (string) get_permalink( $id );
+				} else {
+					$uri = trim( (string) get_page_uri( $id ), '/' );
+					$url = '' === $uri ? '' : home_url( '/' . $uri . '/' );
+				}
+			} catch ( \Throwable $e ) {
+				continue;
+			}
+
+			// A shop page on the home page would otherwise exclude every page.
+			$path = '/' . trim( (string) wp_parse_url( $url, PHP_URL_PATH ), '/' );
+
+			if ( '/' !== $path ) {
+				$paths[] = $path . '*';
+			}
+		}
+
+		return $paths;
+	}
+
+	/** WordPress builds post and page links with $wp_rewrite, created after plugins_loaded. */
+	private static function permalinks_ready(): bool {
+		return isset( $GLOBALS['wp_rewrite'] ) && $GLOBALS['wp_rewrite'] instanceof \WP_Rewrite;
 	}
 
 	// -------------------------------------------------------------- helpers

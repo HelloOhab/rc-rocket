@@ -1,7 +1,7 @@
 # Tests
 
 No framework, no Composer. A stub WordPress surface in `stubs.php`, real Divi
-markup in `fixtures.php`, and seven suites that execute the plugin's logic
+markup in `fixtures.php`, and ten suites that execute the plugin's logic
 directly.
 
     php tests/run.php    # cache keys, context matching, video and embed rewriting
@@ -11,6 +11,9 @@ directly.
     php tests/run5.php   # adversarial markup, pathological input, builder protection
     php tests/run6.php   # failure guards and the cache store on a real filesystem
     php tests/run7.php   # config as code, fonts, embeds
+    php tests/run8.php
+    php tests/run9.php   # updater and release channels
+    php tests/run10.php  # link preloading on plain sites and WooCommerce shops
 
 Run them all:
 
