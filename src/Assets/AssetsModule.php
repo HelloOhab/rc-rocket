@@ -40,8 +40,12 @@ final class AssetsModule implements Module {
 			'fonts'   => Fonts::defaults(),
 			// Off until a site opts in (or picks the Fastest level).
 			'unused_css' => [
-				'enabled'  => false,
-				'safelist' => [],
+				'enabled'     => false,
+				'safelist'    => [],
+				// Optional: the RC Rocket CSS service measures pages in a
+				// real browser instead of this site's own PHP.
+				'service_url' => '',
+				'service_key' => '',
 			],
 			'divi'    => [
 				'unload_modules' => true,

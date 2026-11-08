@@ -135,7 +135,14 @@ final class Settings {
 
 	/** Config-as-code: stable, diffable JSON for version control. */
 	public function export(): string {
-		return (string) wp_json_encode( $this->all(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$all = $this->all();
+
+		// A secret has no place in a file meant for version control.
+		if ( isset( $all['assets']['unused_css']['service_key'] ) ) {
+			$all['assets']['unused_css']['service_key'] = '';
+		}
+
+		return (string) wp_json_encode( $all, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 	}
 
 	public function import( string $json ): bool {
@@ -152,6 +159,9 @@ final class Settings {
 		// Same for the update channel: settings copied from a test site must
 		// not put a production site on pre-releases.
 		$beta = (bool) ( $this->data['general']['beta_updates'] ?? false );
+		// Exports leave the CSS service key out: an imported file without
+		// one keeps this site's.
+		$service_key = (string) ( $this->data['assets']['unused_css']['service_key'] ?? '' );
 
 		$this->data = self::deep_merge( $this->defaults, $this->conform( $decoded ) );
 
@@ -161,6 +171,10 @@ final class Settings {
 
 		if ( isset( $this->data['general'] ) && is_array( $this->data['general'] ) ) {
 			$this->data['general']['beta_updates'] = $beta;
+		}
+
+		if ( '' !== $service_key && '' === (string) ( $this->data['assets']['unused_css']['service_key'] ?? '' ) && is_array( $this->data['assets']['unused_css'] ?? null ) ) {
+			$this->data['assets']['unused_css']['service_key'] = $service_key;
 		}
 
 		// Mark as loaded before saving. save() calls load(), and load() would

@@ -233,7 +233,8 @@ final class UsedCss {
 	public function process_queue(): void {
 		$queue = get_option( self::QUEUE, [] );
 		$queue = is_array( $queue ) ? $queue : [];
-		$batch = array_slice( $queue, 0, self::BATCH, true );
+		// A page measured by the service takes up to half a minute.
+		$batch = array_slice( $queue, 0, '' !== self::service_url( $this->config ) ? 2 : self::BATCH, true );
 
 		update_option( self::QUEUE, array_diff_key( $queue, $batch ), false );
 
@@ -279,32 +280,40 @@ final class UsedCss {
 			return $this->failed( $url, 'no stylesheets of this site on the page' );
 		}
 
-		$purger = new CssPurger(
-			CssPurger::words( $html . "\n" . $this->scripts_text( $html ) ),
-			array_merge( self::SAFELIST, array_map( 'strval', (array) ( $this->config['safelist'] ?? [] ) ) )
-		);
-
-		$files  = [];
-		$before = 0;
-		$after  = 0;
+		// The service measures in a real browser; what it does not return
+		// (or everything, when it is not set up or fails) is trimmed here.
+		$remote  = $this->remote( $url );
+		$purger  = null;
+		$files   = [];
+		$before  = 0;
+		$after   = 0;
+		$service = 0;
 
 		foreach ( $links as $link ) {
 			$css = self::read_local( $link['href'], 'css' );
 
-			// Unreadable: that stylesheet stays exactly as it is.
-			if ( null === $css ) {
+			if ( isset( $remote[ $link['href'] ] ) ) {
+				$used = $remote[ $link['href'] ];
+				++$service;
+			} elseif ( null === $css ) {
+				// Unreadable: that stylesheet stays exactly as it is.
 				continue;
+			} else {
+				$purger ??= new CssPurger(
+					CssPurger::words( $html . "\n" . $this->scripts_text( $html ) ),
+					array_merge( self::SAFELIST, $this->safelist() )
+				);
+				$used     = $purger->purge( CssPurger::absolutize_urls( $css, $link['href'] ) );
 			}
 
-			$used                    = $purger->purge( CssPurger::absolutize_urls( $css, $link['href'] ) );
 			$files[ $link['href'] ]  = $used;
-			$before                 += strlen( $css );
+			$before                 += strlen( (string) $css );
 			$after                  += strlen( $used );
 		}
 
 		// Inlining that much would make the page itself slow to arrive.
 		if ( $after > self::MAX_INLINE ) {
-			$this->logger->info( 'Used CSS too large to inline, page left as it is', [ 'url' => $url, 'bytes' => $after ] );
+			$this->logger->debug( 'Used CSS too large to inline, page left as it is', [ 'url' => $url, 'bytes' => $after ] );
 			$files = [];
 		}
 
@@ -314,6 +323,7 @@ final class UsedCss {
 			'built'     => time(),
 			'before'    => $before,
 			'after'     => $after,
+			'source'    => $service > 0 ? 'service' : 'site',
 			'files'     => $files,
 		];
 
@@ -321,9 +331,75 @@ final class UsedCss {
 			return false;
 		}
 
-		$this->index( $url, $files ? [ 'before' => $before, 'after' => $after, 'built' => time() ] : null );
+		$this->index( $url, $files ? [ 'before' => $before, 'after' => $after, 'built' => time(), 'source' => $record['source'] ] : null );
 
 		return true;
+	}
+
+	/**
+	 * The used CSS of each stylesheet, measured by the RC Rocket CSS service
+	 * (service/used-css in the plugin's repository, deployed on Vercel), or
+	 * null when it is not set up or does not answer.
+	 *
+	 * @return array<string, string>|null
+	 */
+	private function remote( string $url ): ?array {
+		$endpoint = self::service_url( $this->config );
+		$key      = self::service_key( $this->config );
+
+		if ( '' === $endpoint || '' === $key ) {
+			return null;
+		}
+
+		$response = wp_remote_post(
+			$endpoint,
+			[
+				'timeout' => 110,
+				'headers' => [
+					'Authorization' => 'Bearer ' . $key,
+					'Content-Type'  => 'application/json',
+				],
+				'body'    => (string) wp_json_encode(
+					[
+						'url'      => add_query_arg( [ self::SKIP_ARG => '1' ], $url ),
+						'safelist' => array_values( $this->safelist() ),
+					]
+				),
+			]
+		);
+
+		$code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+		$data = 200 === $code ? json_decode( (string) wp_remote_retrieve_body( $response ), true ) : null;
+
+		if ( ! is_array( $data ) || ! is_array( $data['stylesheets'] ?? null ) ) {
+			$this->logger->error(
+				'Used CSS service did not answer; built on the site instead',
+				[
+					'url'   => $url,
+					'error' => is_wp_error( $response ) ? $response->get_error_message() : 'HTTP ' . $code,
+				]
+			);
+
+			return null;
+		}
+
+		return array_filter( $data['stylesheets'], 'is_string' );
+	}
+
+	/** Set in wp-config.php (wins) or on the Assets tab. HTTPS only. */
+	public static function service_url( array $config ): string {
+		$url = trim( (string) ( defined( 'RC_ROCKET_CSS_SERVICE' ) ? RC_ROCKET_CSS_SERVICE : ( $config['service_url'] ?? '' ) ) );
+
+		return str_starts_with( strtolower( $url ), 'https://' ) ? $url : '';
+	}
+
+	public static function service_key( array $config ): string {
+		return trim( (string) ( defined( 'RC_ROCKET_CSS_KEY' ) ? RC_ROCKET_CSS_KEY : ( $config['service_key'] ?? '' ) ) );
+	}
+
+	/** @return string[] */
+	private function safelist(): array {
+		return array_values( array_filter( array_map( 'strval', (array) ( $this->config['safelist'] ?? [] ) ) ) );
 	}
 
 	private function failed( string $url, string $why ): bool {
@@ -443,14 +519,16 @@ final class UsedCss {
 		update_option( self::INDEX, $index, false );
 	}
 
-	/** @return array{pages:int, before:int, after:int, queued:int} */
+	/** @return array{pages:int, service:int, service_on:bool, before:int, after:int, queued:int} */
 	public function report(): array {
 		$index = get_option( self::INDEX, [] );
 		$index = is_array( $index ) ? $index : [];
 		$queue = get_option( self::QUEUE, [] );
 
 		return [
-			'pages'  => count( $index ),
+			'pages'   => count( $index ),
+			'service' => count( array_filter( $index, static fn( $e ): bool => is_array( $e ) && 'service' === ( $e['source'] ?? '' ) ) ),
+			'service_on' => '' !== self::service_url( $this->config ) && '' !== self::service_key( $this->config ),
 			'before' => (int) array_sum( array_column( $index, 'before' ) ),
 			'after'  => (int) array_sum( array_column( $index, 'after' ) ),
 			'queued' => is_array( $queue ) ? count( $queue ) : 0,
@@ -477,7 +555,10 @@ final class UsedCss {
 				continue;
 			}
 
-			if ( preg_match( '#(?<![\w-])media\s*=\s*["\']?([^"\'>]+)#i', $tag, $media ) && ! preg_match( '#\b(all|screen)\b#i', $media[1] ) ) {
+			// Print and speech stylesheets play no part in the first paint.
+			// Any other condition (min-width: 601px) is copied onto the
+			// inlined <style>, so it applies exactly where it did.
+			if ( preg_match( '#(?<![\w-])media\s*=\s*["\']?([^"\'>]+)#i', $tag, $media ) && preg_match( '#^\s*(only\s+)?(print|speech)\s*$#i', $media[1] ) ) {
 				continue;
 			}
 

@@ -124,6 +124,13 @@ function wp_remote_get( $u, $a = [] ) {
 	}
 	return new WP_Error( 'offline', 'no network in tests' );
 }
+function wp_remote_post( $u, $a = [] ) {
+	$GLOBALS['http_posts'][] = [ 'url' => $u, 'args' => $a ];
+	if ( isset( $GLOBALS['http_post'][ $u ] ) ) {
+		return $GLOBALS['http_post'][ $u ] + [ 'code' => 200, 'body' => '', 'headers' => [] ];
+	}
+	return new WP_Error( 'offline', 'no network in tests' );
+}
 function wp_remote_retrieve_body( $r ) { return is_array( $r ) ? (string) $r['body'] : ''; }
 function wp_remote_retrieve_response_code( $r ) { return is_array( $r ) ? (int) $r['code'] : 0; }
 function wp_remote_retrieve_header( $r, $h ) { return is_array( $r ) ? (string) ( $r['headers'][ strtolower( $h ) ] ?? '' ) : ''; }

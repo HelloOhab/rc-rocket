@@ -133,6 +133,20 @@ Switch it off under Safety.
   hosts' stylesheets, print stylesheets and links marked data-no-optimize
   are left alone. Per-page switch in the editor box; a safelist for CSS
   that must always be kept; System check reports pages prepared.
+* New: the RC Rocket CSS service (optional), like WP Rocket's. A small
+  Vercel function (service/used-css in this repository) loads the page in
+  headless Chrome at phone and desktop size, scrolls it and opens the
+  mobile menu, keeps the selectors that match the rendered page, and trims
+  the original CSS text with PostCSS. The site still stores and inlines the
+  result; when the service is not set up or does not answer, the site
+  trims the CSS itself. On the beta home pages: 93% and 71% of the CSS
+  removed (79% and 58% on the site), pixel-identical before interaction.
+  Set the address and key on the Assets tab or as RC_ROCKET_CSS_SERVICE
+  and RC_ROCKET_CSS_KEY in wp-config.php. The key is HTTPS-only and left
+  out of settings exports.
+* Stylesheets for some screen sizes only (WPForms' layout files use
+  media='(min-width: 601px)') are now handled too, with their condition
+  copied onto the inlined CSS.
 
 = 0.12.7 =
 From updating a WooCommerce site (ghostud.com) to 0.12.6.

@@ -54,6 +54,7 @@ $html = '<head>'
 	. '<link rel=\'stylesheet\' href="/wp-content/plugins/wpforms/full.min.css?ver=2">'
 	. '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">'
 	. '<link rel="stylesheet" href="https://example.com/print.css" media="print">'
+	. '<link rel="stylesheet" href="https://example.com/wide.css" media=\'(min-width: 601px)\'>'
 	. '<link rel="stylesheet" data-no-optimize="1" href="https://example.com/keep.css">'
 	. '<link rel="preload" as="style" href="https://example.com/async.css">'
 	. '</head>';
@@ -65,7 +66,8 @@ ok( 'ucss: root-relative stylesheets count as own', in_array( '/wp-content/plugi
 ok( 'ucss: other hosts are left alone', ! in_array( 'https://fonts.googleapis.com/css2?family=Inter', $hrefs, true ) );
 ok( 'ucss: print stylesheets are left alone', ! in_array( 'https://example.com/print.css', $hrefs, true ) );
 ok( 'ucss: data-no-optimize is respected', ! in_array( 'https://example.com/keep.css', $hrefs, true ) );
-ok( 'ucss: preloads are not stylesheets', 2 === count( $links ), count( $links ) . ' links' );
+ok( 'ucss: a stylesheet for some screen sizes is included', in_array( 'https://example.com/wide.css', $hrefs, true ) );
+ok( 'ucss: preloads are not stylesheets', 3 === count( $links ), count( $links ) . ' links' );
 ok( 'ucss: offsets point at the tags', substr( $html, $links[0]['offset'], strlen( $links[0]['tag'] ) ) === $links[0]['tag'] );
 
 // ============ 32. Remove unused CSS: first visit, build, later visits ============
@@ -131,6 +133,10 @@ $narrow = str_replace( '<link rel="stylesheet" id="p-css" href="' . $plugin . '"
 $GLOBALS['http']['https://example.com/services/?rcr_ucss=1'] = [ 'body' => $narrow ];
 $ucss->build( 'https://example.com/services/' );
 ok( 'ucss: a media-limited stylesheet keeps its media', str_contains( $ucss->rewrite( $narrow ), 'media="screen and (max-width: 980px)">.btn{d:4}' ) );
+$wide = str_replace( '<link rel="stylesheet" id="p-css" href="' . $plugin . '">', "<link rel='stylesheet' id='p-css' href='" . $plugin . "' media='(min-width: 601px)' />", $page );
+$GLOBALS['http']['https://example.com/services/?rcr_ucss=1'] = [ 'body' => $wide ];
+$ucss->build( 'https://example.com/services/' );
+ok( 'ucss: a min-width stylesheet (WPForms layout) is inlined with its condition', str_contains( $ucss->rewrite( $wide ), 'media="(min-width: 601px)">.btn{d:4}' ) );
 $GLOBALS['http']['https://example.com/services/?rcr_ucss=1'] = [ 'body' => $page ];
 $ucss->build( 'https://example.com/services/' );
 
@@ -150,6 +156,48 @@ $_SERVER['REQUEST_URI'] = '/services/';
 
 $ucss->forget_post( 7 );
 ok( 'ucss: saving the post forgets its CSS', $ucss->rewrite( $page ) === $page );
+
+// ============ 33. Remove unused CSS: built by the RC Rocket CSS service ============
+
+$service_url = 'https://rcr-css.example.app/api/used-css';
+$with_service = new UsedCss(
+	[ 'enabled' => true, 'safelist' => [ 'my-popup' ], 'service_url' => $service_url, 'service_key' => 'k3y' ],
+	new RCRocket\Integrations\Divi( $logger, [] ),
+	new RCRocket\Support\SafeMode( $settings ),
+	$logger
+);
+
+$GLOBALS['http_posts'] = [];
+$GLOBALS['http_post']  = [
+	$service_url => [ 'body' => json_encode( [ 'stylesheets' => [ $theme => '.hero{from:service}', $plugin => '.btn{from:service}' ] ] ) ],
+];
+$with_service->build( 'https://example.com/services/' );
+$sent = $GLOBALS['http_posts'][0] ?? [];
+ok( 'service: the page address is sent, with the feature skipped', str_contains( (string) ( $sent['args']['body'] ?? '' ), '"url":"https:\/\/example.com\/services\/?rcr_ucss=1"' ) );
+ok( 'service: with the key', 'Bearer k3y' === ( $sent['args']['headers']['Authorization'] ?? '' ) );
+ok( 'service: and the safelist', str_contains( (string) ( $sent['args']['body'] ?? '' ), 'my-popup' ) );
+$served = $with_service->rewrite( $page );
+ok( 'service: its CSS is what the page gets', str_contains( $served, '.hero{from:service}' ) && str_contains( $served, '.btn{from:service}' ) );
+ok( 'service: the report says who built it', 1 === $with_service->report()['service'] && true === $with_service->report()['service_on'] );
+
+// The service down: the site builds the CSS itself, nothing is lost.
+$GLOBALS['http_post'] = [ $service_url => [ 'code' => 504, 'body' => 'timeout' ] ];
+$with_service->build( 'https://example.com/services/' );
+$fallback = $with_service->rewrite( $page );
+ok( 'service: when it fails the site builds the CSS', str_contains( $fallback, '.hero{a:1}' ) && ! str_contains( $fallback, 'from:service' ) );
+ok( 'service: and the report says so', 0 === $with_service->report()['service'] );
+
+// Only over HTTPS: a key is never sent in the clear.
+ok( 'service: an http:// address is ignored', '' === UsedCss::service_url( [ 'service_url' => 'http://rcr-css.example.app/api/used-css' ] ) );
+
+// The service key never leaves the site in an export, and survives an import.
+$cfg = new RCRocket\Support\Settings();
+$cfg->add_defaults( 'assets', [ 'unused_css' => [ 'enabled' => false, 'safelist' => [], 'service_url' => '', 'service_key' => '' ] ] );
+$cfg->merge( [ 'assets' => [ 'unused_css' => [ 'service_url' => $service_url, 'service_key' => 's3cret' ] ] ] );
+$exported = $cfg->export();
+ok( 'service: an export leaves the key out', ! str_contains( $exported, 's3cret' ) && str_contains( $exported, 'rcr-css.example.app' ) );
+$cfg->import( $exported );
+ok( 'service: importing it keeps the site\'s key', 's3cret' === $cfg->get( 'assets.unused_css.service_key' ) );
 
 $ucss->forget_all();
 ok( 'ucss: clearing everything empties the folder', [] === glob( $ucss->directory() . '/*.json' ) );

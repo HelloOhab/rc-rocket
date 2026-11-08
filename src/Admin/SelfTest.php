@@ -579,6 +579,7 @@ final class SelfTest {
 				$used['pages'] > 0 ? self::PASS : self::INFO,
 				$used['pages'] > 0
 					? sprintf( '%d pages prepared, %d%% of their CSS removed. %d waiting.', $used['pages'], (int) round( 100 - 100 * $used['after'] / max( 1, $used['before'] ) ), $used['queued'] )
+						. ( $used['service_on'] ? sprintf( ' %d measured by the RC Rocket CSS service.', $used['service'] ) : ' Prepared on this site (no CSS service set up).' )
 					: sprintf( 'No pages prepared yet, %d waiting. Pages are prepared in the background after their first visit.', $used['queued'] ),
 				''
 			);

@@ -788,6 +788,7 @@
               ? `Ready on ${ur.pages} ${ur.pages === 1 ? "page" : "pages"}, with ${Math.round(100 - (100 * ur.after) / Math.max(1, ur.before))}% of their CSS removed.`
               : "No pages prepared yet. Each page is prepared in the background after its first visit, usually within a minute.",
             ur.queued > 0 ? ` ${ur.queued} waiting.` : "",
+            ur.service_on && ur.pages > 0 ? ` ${ur.service} measured by the RC Rocket CSS service, the rest on this site.` : "",
             " Clearing the cache prepares everything again.",
           ),
         uc.enabled &&
@@ -796,6 +797,28 @@
             help: "One per line, for example a class name such as my-popup. Use this if something only looks right after the visitor scrolls or taps, then clear the cache.",
             value: ie(uc.safelist),
             onChange: (o) => n("assets", "unused_css", { ...uc, safelist: re(o) }),
+          }),
+        uc.enabled &&
+          wp.element.createElement(
+            "p",
+            { className: "rcr-note" },
+            wp.element.createElement("strong", null, "RC Rocket CSS service (optional). "),
+            "Like WP Rocket, pages can be measured in a real browser on the agency's service instead of on this site: more precise, and none of the work runs on this server. The result is still stored and served from this site. Leave both fields empty to prepare pages here. If the service is ever unavailable, this site prepares the page itself.",
+          ),
+        uc.enabled &&
+          wp.element.createElement(wp.components.TextControl, {
+            label: "Service address",
+            help: "Starts with https://, for example https://rc-rocket-css.vercel.app/api/used-css",
+            value: uc.service_url || "",
+            onChange: (o) => n("assets", "unused_css", { ...uc, service_url: o.trim() }),
+          }),
+        uc.enabled &&
+          wp.element.createElement(wp.components.TextControl, {
+            label: "Service key",
+            type: "password",
+            autoComplete: "off",
+            value: uc.service_key || "",
+            onChange: (o) => n("assets", "unused_css", { ...uc, service_key: o.trim() }),
           }),
       ),
       wp.element.createElement(
