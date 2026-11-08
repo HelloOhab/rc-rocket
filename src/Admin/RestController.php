@@ -154,6 +154,16 @@ final class RestController {
 
 		register_rest_route(
 			self::NAMESPACE,
+			'/unused-css/clear',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'clear_unused_css' ],
+				'permission_callback' => $manage,
+			]
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
 			'/self-test',
 			[
 				'methods'             => 'GET',
@@ -370,6 +380,14 @@ final class RestController {
 		return rest_ensure_response( [ 'cleared' => true ] );
 	}
 
+	/** Prepare every page's CSS again, and clear the pages that carry the old one. */
+	public function clear_unused_css(): \WP_REST_Response {
+		$used = $this->container->get( 'assets.used_css' );
+		$used->clear();
+
+		return rest_ensure_response( [ 'cleared' => true, 'report' => $used->report() ] );
+	}
+
 	public function self_test(): \WP_REST_Response {
 		return rest_ensure_response( ( new SelfTest( $this->container ) )->run() );
 	}
@@ -581,6 +599,7 @@ final class RestController {
 				'divi'     => $divi->report(),
 				'fonts'    => $this->container->get( 'assets.fonts' )->report(),
 				'divi_assets' => $this->container->get( 'assets.divi' )->report(),
+				'unused_css'  => $this->container->get( 'assets.used_css' )->report(),
 				'hosting'  => $hosting->report() + [
 					'image_conversion_allowed' => MediaModule::conversion_allowed( $hosting ),
 				],

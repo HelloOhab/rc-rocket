@@ -69,6 +69,11 @@ final class PageOptions {
 				'setting'   => 'js.lazy_render',
 				'wp_rocket' => '',
 			],
+			'unused_css'       => [
+				'label'     => __( 'Remove unused CSS', 'rc-rocket' ),
+				'setting'   => 'assets.unused_css.enabled',
+				'wp_rocket' => 'remove_unused_css',
+			],
 			'fonts'            => [
 				'label'     => __( 'Serve Google Fonts locally', 'rc-rocket' ),
 				'setting'   => 'assets.fonts.localize',

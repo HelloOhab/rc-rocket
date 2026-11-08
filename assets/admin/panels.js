@@ -400,7 +400,7 @@
   var LEVELS = [
     { name: 'safe', title: 'Careful', text: 'Speeds up images, fonts and caching, and never changes how a page behaves. Choose this if the site uses many plugins or something stopped working on a faster level.' },
     { name: 'recommended', title: 'Recommended', text: 'The right choice for almost every Divi site. Also waits to load scripts until a visitor scrolls or taps. If visitors start seeing errors, RC Rocket switches itself back automatically and emails you.' },
-    { name: 'maximum', title: 'Fastest', text: 'Everything above and a few extra tricks. After switching, look through your main pages on a phone: popups, sticky headers and overlapping sections are the things to check.' }
+    { name: 'maximum', title: 'Fastest', text: 'Everything above, plus each page gets only the CSS it uses, and a few extra tricks. After switching, look through your main pages on a phone: popups, sticky headers and overlapping sections are the things to check.' }
   ];
 
   var STATUS_WORDS = { fail: 'Needs fixing', warn: 'Worth a look', pass: 'OK', info: 'Info' };
@@ -517,6 +517,16 @@
         .then(function () { setBusy(''); });
     };
 
+    var unusedCss = !!((props.settings.assets || {}).unused_css || {}).enabled;
+
+    var clearCss = function () {
+      setBusy('css');
+      props.api('/unused-css/clear', { method: 'POST' })
+        .then(function () { done('Done. Each page\'s styles are prepared again over the next few minutes, as visitors open it.'); })
+        .catch(failed)
+        .then(function () { setBusy(''); });
+    };
+
     var safe = function (on) {
       setBusy('safe');
       props.api('/settings', { method: 'POST', data: { general: { safe_mode: on } } })
@@ -553,7 +563,11 @@
       el('section', { className: 'rcr-easy__card' },
         el('h2', null, 'Clear the cache'),
         el('p', null, 'RC Rocket keeps ready-made copies of your pages so they open instantly. It refreshes a page by itself when you save it. Clear everything after changing something that appears on every page, such as the menu, header, footer or Divi Theme Options.'),
-        el(c.Button, { variant: 'primary', isBusy: busy === 'clear', disabled: !!busy, onClick: clear }, 'Clear the whole cache')
+        el(c.Button, { variant: 'primary', isBusy: busy === 'clear', disabled: !!busy, onClick: clear }, 'Clear the whole cache'),
+        unusedCss && el('p', { className: 'rcr-easy__also' },
+          'Pages still look wrong until someone scrolls? ',
+          el(c.Button, { variant: 'link', isBusy: busy === 'css', disabled: !!busy, onClick: clearCss }, 'Prepare page styles again')
+        )
       ),
 
       el('section', { className: 'rcr-easy__card' },

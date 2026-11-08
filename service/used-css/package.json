@@ -1,0 +1,17 @@
+{
+  "name": "rc-rocket-used-css",
+  "private": true,
+  "type": "module",
+  "description": "Measures the CSS a page uses in headless Chrome, for RC Rocket's Remove Unused CSS.",
+  "engines": {
+    "node": ">=22.17"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "153.0.0",
+    "postcss": "8.5.32",
+    "puppeteer-core": "25.11.0"
+  }
+}

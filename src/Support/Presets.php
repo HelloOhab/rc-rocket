@@ -62,6 +62,7 @@ final class Presets {
 					'localize' => true,
 					'preload'  => false,
 				],
+				'unused_css' => [ 'enabled' => false ],
 				'divi'      => [ 'unload_modules' => false ],
 				'bloat'     => [
 					'emojis'         => true,
@@ -155,7 +156,10 @@ final class Presets {
 					'lazy_render'     => true,
 					'divi_animations' => [ 'disable_on_mobile' => true ],
 				],
-				'assets'  => [ 'bloat' => [ 'block_library' => true ] ],
+				'assets'  => [
+					'bloat'      => [ 'block_library' => true ],
+					'unused_css' => [ 'enabled' => true ],
+				],
 				'preload' => [ 'links_mode' => 'prerender' ],
 			]
 		);

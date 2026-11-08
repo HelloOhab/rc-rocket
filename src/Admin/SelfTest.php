@@ -571,6 +571,31 @@ final class SelfTest {
 			$recorded > 0 ? '' : 'Visit a few pages of your site logged out to build the inventory.'
 		);
 
+		if ( $settings->enabled( 'assets.unused_css.enabled' ) ) {
+			$used     = $this->container->get( 'assets.used_css' )->report();
+			$checks[] = $this->check(
+				'unused_css',
+				'Unused CSS',
+				$used['pages'] > 0 ? self::PASS : self::INFO,
+				$used['pages'] > 0
+					? sprintf( '%d pages prepared, %d%% of their CSS removed. %d waiting.', $used['pages'], (int) round( 100 - 100 * $used['after'] / max( 1, $used['before'] ) ), $used['queued'] )
+						. ( $used['service_on'] ? sprintf( ' %d measured by the RC Rocket CSS service.', $used['service'] ) : ' Prepared on this site (no CSS service set up).' )
+					: sprintf( 'No pages prepared yet, %d waiting. Pages are prepared in the background after their first visit.', $used['queued'] ),
+				''
+			);
+
+			if ( $used['failed'] > 0 ) {
+				$first    = $used['failures'][0];
+				$checks[] = $this->check(
+					'unused_css_failed',
+					'Unused CSS: pages that could not be prepared',
+					self::WARN,
+					sprintf( '%d pages failed after 7 attempts and keep their normal stylesheets. First: %s (%s).', $used['failed'], $first['url'], $first['reason'] ),
+					'They are tried again in 3 days, or now with "Clear unused CSS" on the Assets tab. A page that keeps failing usually could not be loaded by the server itself (a firewall or a login wall).'
+				);
+			}
+		}
+
 		if ( null !== $markup && $settings->enabled( 'assets.fonts.localize' ) ) {
 			$remote = str_contains( $markup, 'fonts.googleapis.com' );
 			$report = $this->container->get( 'assets.fonts' )->report();

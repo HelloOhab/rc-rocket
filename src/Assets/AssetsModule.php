@@ -38,6 +38,15 @@ final class AssetsModule implements Module {
 			'scan'    => true,
 			'rules'   => [],
 			'fonts'   => Fonts::defaults(),
+			// Off until a site opts in (or picks the Fastest level).
+			'unused_css' => [
+				'enabled'     => false,
+				'safelist'    => [],
+				// Optional: the RC Rocket CSS service measures pages in a
+				// real browser instead of this site's own PHP.
+				'service_url' => '',
+				'service_key' => '',
+			],
 			'divi'    => [
 				'unload_modules' => true,
 			],
@@ -79,6 +88,16 @@ final class AssetsModule implements Module {
 		);
 
 		$container->set(
+			'assets.used_css',
+			static fn( Container $c ): UsedCss => new UsedCss(
+				(array) $c->get( 'settings' )->get( 'assets.unused_css', [] ),
+				$c->get( 'divi' ),
+				$c->get( 'safe_mode' ),
+				$c->get( 'logger' )
+			)
+		);
+
+		$container->set(
 			'assets.divi',
 			static fn( Container $c ): DiviOptimizer => new DiviOptimizer(
 				$c->get( 'divi' ),
@@ -105,6 +124,10 @@ final class AssetsModule implements Module {
 			// in safe mode — that is precisely when you want the inventory.
 			$container->get( 'assets.registry' )->hooks();
 		}
+
+		// Its clean-up hooks must run even in safe mode; the rewrite itself
+		// checks safe mode on every page.
+		$container->get( 'assets.used_css' )->hooks();
 
 		if ( $safe->is_active() ) {
 			return;

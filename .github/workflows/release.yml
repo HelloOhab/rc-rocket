@@ -61,7 +61,7 @@ jobs:
           rsync -a --exclude node_modules --exclude dist --exclude .git \
             --exclude .github --exclude .gitignore --exclude package.json \
             --exclude package-lock.json --exclude admin-src --exclude tests \
-            --exclude deploy --exclude tools --exclude DOCUMENTATION.md ./ dist/rc-rocket/
+            --exclude deploy --exclude tools --exclude service --exclude DOCUMENTATION.md ./ dist/rc-rocket/
           cd dist && zip -rq "rc-rocket-${VERSION}.zip" rc-rocket && rm -rf rc-rocket
 
       - name: Publish the release

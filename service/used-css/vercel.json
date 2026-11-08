@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/used-css.js": {
+      "maxDuration": 120,
+      "memory": 2048
+    }
+  }
+}

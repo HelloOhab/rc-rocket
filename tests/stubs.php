@@ -67,7 +67,7 @@ function is_ssl() { return true; }
 function size_format( $b, $d = 0 ) { return $b . 'B'; }
 function human_time_diff( $a, $b ) { return '1 hour'; }
 function wp_get_upload_dir() {
-	return [ 'basedir' => '/wp/wp-content/uploads', 'baseurl' => 'https://example.com/wp-content/uploads' ];
+	return [ 'basedir' => $GLOBALS['upload_basedir'] ?? '/wp/wp-content/uploads', 'baseurl' => 'https://example.com/wp-content/uploads' ];
 }
 
 // Conditional tags driven by $GLOBALS['ctx'].
@@ -93,7 +93,7 @@ function is_admin() { return (bool) ctx( 'admin' ); }
 function is_user_logged_in() { return (bool) ctx( 'logged_in' ); }
 function wp_doing_ajax() { return false; }
 function wp_doing_cron() { return false; }
-function post_password_required() { return false; }
+function post_password_required() { return (bool) ctx( 'password_required' ); }
 function get_queried_object_id() { return (int) ctx( 'object_id', 0 ); }
 function get_queried_object() { return ctx( 'object', null ); }
 function get_post_type( $id = 0 ) { return (string) ctx( 'post_type', 'page' ); }
@@ -116,9 +116,24 @@ function set_transient( $k, $v, $ttl = 0 ) {
 }
 function delete_transient( $k ) { unset( $GLOBALS['transients'][ $k ] ); return true; }
 function current_user_can( $c ) { return true; }
-function wp_remote_get( $u, $a = [] ) { return new WP_Error( 'offline', 'no network in tests' ); }
-function wp_remote_retrieve_body( $r ) { return ''; }
-function wp_remote_retrieve_response_code( $r ) { return 0; }
+// Offline, unless a test supplies responses: $GLOBALS['http'][ $url ] = [ 'code' => 200, 'body' => '…' ].
+function wp_remote_get( $u, $a = [] ) {
+	if ( isset( $GLOBALS['http'][ $u ] ) ) {
+		$GLOBALS['http_log'][] = $u;
+		return $GLOBALS['http'][ $u ] + [ 'code' => 200, 'body' => '', 'headers' => [] ];
+	}
+	return new WP_Error( 'offline', 'no network in tests' );
+}
+function wp_remote_post( $u, $a = [] ) {
+	$GLOBALS['http_posts'][] = [ 'url' => $u, 'args' => $a ];
+	if ( isset( $GLOBALS['http_post'][ $u ] ) ) {
+		return $GLOBALS['http_post'][ $u ] + [ 'code' => 200, 'body' => '', 'headers' => [] ];
+	}
+	return new WP_Error( 'offline', 'no network in tests' );
+}
+function wp_remote_retrieve_body( $r ) { return is_array( $r ) ? (string) $r['body'] : ''; }
+function wp_remote_retrieve_response_code( $r ) { return is_array( $r ) ? (int) $r['code'] : 0; }
+function wp_remote_retrieve_header( $r, $h ) { return is_array( $r ) ? (string) ( $r['headers'][ strtolower( $h ) ] ?? '' ) : ''; }
 function is_wp_error( $t ) { return $t instanceof WP_Error; }
 function wp_scripts() { return (object) [ 'done' => [], 'registered' => [] ]; }
 function wp_styles() { return (object) [ 'done' => [], 'registered' => [] ]; }
