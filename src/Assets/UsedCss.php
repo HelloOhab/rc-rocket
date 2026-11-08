@@ -50,8 +50,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class UsedCss {
 
-	public const HOOK     = 'rc-rocket/unused-css/build';
-	public const SKIP_ARG = 'rcr_ucss';
+	public const HOOK         = 'rc-rocket/unused-css/build';
+	public const CLEANUP_HOOK = 'rc-rocket/unused-css/cleanup';
+	public const SKIP_ARG     = 'rcr_ucss';
 
 	private const QUEUE      = 'rcrocket_ucss_queue';
 	private const INDEX      = 'rcrocket_ucss_index';
@@ -59,8 +60,18 @@ final class UsedCss {
 	private const BATCH      = 4;
 	private const MAX_INLINE = 450 * 1024;
 	private const MAX_JS     = 4 * 1024 * 1024;
-	private const RETRY      = HOUR_IN_SECONDS;
 	private const MAX_AGE    = 10 * DAY_IN_SECONDS;
+
+	/**
+	 * Waits between attempts after a failed build, as WP Rocket does: 1, 2,
+	 * 5, 10, 20 and 25 minutes. After that the page is marked failed and
+	 * tried again in three days, or when someone clears the unused CSS.
+	 */
+	private const RETRY_STEPS = [ 60, 120, 300, 600, 1200, 1500 ];
+	private const FAILED_WAIT = 3 * DAY_IN_SECONDS;
+
+	/** Stored CSS for a page nobody has opened for a month is deleted. */
+	private const UNUSED_AFTER = 30 * DAY_IN_SECONDS;
 
 	/**
 	 * Classes scripts add to the page that its own files may not spell out
@@ -90,10 +101,12 @@ final class UsedCss {
 		// Clearing runs whether the feature is on or off: stored CSS must
 		// not outlive the content it was built for, in case it comes back on.
 		add_action( self::HOOK, [ $this, 'process_queue' ] );
-		add_action( 'rc-rocket/purge/all', [ $this, 'forget_all' ] );
+		add_action( self::CLEANUP_HOOK, [ $this, 'cleanup' ] );
+		add_action( 'rc-rocket/purge/all', [ $this, 'forget_on_purge' ], 10, 1 );
 		add_action( 'rc-rocket/purge/url', [ $this, 'forget_url' ] );
 		add_action( 'rc-rocket/purge/key', [ $this, 'forget_key' ] );
 		add_action( 'save_post', [ $this, 'forget_post' ] );
+		add_action( 'rc-rocket/settings/before_save', [ $this, 'forget_on_safelist_change' ], 10, 2 );
 
 		foreach ( [ 'wp_update_nav_menu', 'customize_save_after', 'switch_theme', 'activated_plugin', 'deactivated_plugin', 'upgrader_process_complete', 'update_option_sidebars_widgets' ] as $hook ) {
 			add_action( $hook, [ $this, 'forget_all' ] );
@@ -101,6 +114,10 @@ final class UsedCss {
 
 		if ( empty( $this->config['enabled'] ) ) {
 			return;
+		}
+
+		if ( ! wp_next_scheduled( self::CLEANUP_HOOK ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::CLEANUP_HOOK );
 		}
 
 		// After everything else that adds or changes stylesheet links.
@@ -131,8 +148,8 @@ final class UsedCss {
 
 		if ( null === $stored || ( $stored['signature'] ?? '' ) !== self::signature( $links ) ) {
 			// Not built yet, or built for other stylesheets. A failed build
-			// is retried after a while, not on every visit.
-			if ( null === $stored || empty( $stored['failed'] ) || (int) $stored['built'] < time() - self::RETRY ) {
+			// waits for its next retry time, not the next visit.
+			if ( null === $stored || empty( $stored['failed'] ) || time() >= (int) ( $stored['next_retry'] ?? 0 ) ) {
 				$this->queue( $url );
 			}
 
@@ -142,6 +159,8 @@ final class UsedCss {
 		if ( (int) $stored['built'] < time() - self::MAX_AGE ) {
 			$this->queue( $url );
 		}
+
+		$this->seen( $url );
 
 		$files = (array) ( $stored['files'] ?? [] );
 
@@ -196,6 +215,13 @@ final class UsedCss {
 		// Searches, feeds and previews have endless addresses or no fixed
 		// markup; carts and checkouts change with every visitor.
 		if ( is_search() || is_feed() || is_preview() || is_404() ) {
+			return false;
+		}
+
+		// A protected page shows a password form until it is unlocked: its
+		// CSS would be learned from the form, and the visitor who unlocks
+		// it would get that.
+		if ( post_password_required() ) {
 			return false;
 		}
 
@@ -327,11 +353,11 @@ final class UsedCss {
 			'files'     => $files,
 		];
 
-		if ( ! Filesystem::ensure_dir( $this->directory() ) || ! Filesystem::atomic_write( $this->file( $url ), (string) wp_json_encode( $record ) ) ) {
+		if ( ! $this->store( $url, $record ) ) {
 			return false;
 		}
 
-		$this->index( $url, $files ? [ 'before' => $before, 'after' => $after, 'built' => time(), 'source' => $record['source'] ] : null );
+		$this->index( $url, $files ? [ 'before' => $before, 'after' => $after, 'built' => time(), 'seen' => time(), 'source' => $record['source'] ] : null );
 
 		return true;
 	}
@@ -402,12 +428,44 @@ final class UsedCss {
 		return array_values( array_filter( array_map( 'strval', (array) ( $this->config['safelist'] ?? [] ) ) ) );
 	}
 
+	/**
+	 * Record a failed build and when to try again. The waits grow with each
+	 * attempt; after the last one the page counts as failed and waits three
+	 * days. A page that never built is served with its normal stylesheets
+	 * all the while.
+	 */
 	private function failed( string $url, string $why ): bool {
-		$this->logger->debug( 'Used CSS not built', [ 'url' => $url, 'reason' => $why ] );
+		$previous = $this->load( $url );
+		$retries  = is_array( $previous ) && ! empty( $previous['failed'] ) ? (int) ( $previous['retries'] ?? 0 ) + 1 : 0;
+		$gave_up  = $retries >= count( self::RETRY_STEPS );
+		$next     = time() + ( $gave_up ? self::FAILED_WAIT : self::RETRY_STEPS[ $retries ] );
 
-		if ( Filesystem::ensure_dir( $this->directory() ) ) {
-			Filesystem::atomic_write( $this->file( $url ), (string) wp_json_encode( [ 'url' => $url, 'signature' => '', 'built' => time(), 'failed' => $why, 'files' => [] ] ) );
-		}
+		$this->logger->debug( 'Used CSS not built', [ 'url' => $url, 'reason' => $why, 'attempt' => $retries + 1 ] );
+
+		$this->store(
+			$url,
+			[
+				'url'        => $url,
+				'signature'  => '',
+				'built'      => time(),
+				'failed'     => $why,
+				'retries'    => $retries,
+				'next_retry' => $next,
+				'files'      => [],
+			]
+		);
+
+		$this->index(
+			$url,
+			[
+				'failed'     => $why,
+				'gave_up'    => $gave_up,
+				'retries'    => $retries,
+				'next_retry' => $next,
+				'built'      => time(),
+				'seen'       => time(),
+			]
+		);
 
 		return false;
 	}
@@ -444,13 +502,75 @@ final class UsedCss {
 		delete_option( self::INDEX );
 	}
 
+	/**
+	 * The "Clear unused CSS" button: every page is prepared again, and the
+	 * cached pages that carry the old CSS are cleared with it.
+	 */
+	public function clear(): void {
+		$this->forget_all();
+		do_action( 'rc-rocket/purge/all', 'unused-css' );
+	}
+
+	/**
+	 * An ordinary cache clear keeps the prepared CSS, as WP Rocket does: a
+	 * changed stylesheet already changes the page's signature, so its CSS
+	 * is prepared again anyway. A Theme Builder or Divi Library save is
+	 * different: it can change the markup of every page without touching
+	 * a stylesheet.
+	 */
+	public function forget_on_purge( mixed $reason = '' ): void {
+		if ( in_array( $reason, [ 'divi-theme-builder', 'divi-library' ], true ) ) {
+			$this->forget_all();
+		}
+	}
+
+	/** A new safelist changes what every page keeps. */
+	public function forget_on_safelist_change( mixed $new, mixed $old ): void {
+		$list = static fn( $settings ): array => is_array( $settings ) ? array_values( (array) ( $settings['assets']['unused_css']['safelist'] ?? [] ) ) : [];
+
+		if ( $list( $new ) !== $list( $old ) ) {
+			$this->forget_all();
+		}
+	}
+
 	public function forget_url( mixed $url ): void {
 		if ( ! is_string( $url ) || '' === $url ) {
 			return;
 		}
 
 		@unlink( $this->file( $url ) ); // phpcs:ignore
+		@unlink( $this->legacy_file( $url ) ); // phpcs:ignore
 		$this->index( $url, null );
+	}
+
+	/**
+	 * Daily: delete what was prepared for pages nobody has opened for a
+	 * month (WP Rocket does the same), so the folder cannot grow forever.
+	 */
+	public function cleanup(): int {
+		$cutoff  = time() - self::UNUSED_AFTER;
+		$index   = get_option( self::INDEX, [] );
+		$index   = is_array( $index ) ? $index : [];
+		$removed = 0;
+
+		foreach ( $index as $key => $entry ) {
+			if ( (int) ( $entry['seen'] ?? $entry['built'] ?? 0 ) < $cutoff ) {
+				unset( $index[ $key ] );
+			}
+		}
+
+		foreach ( (array) glob( $this->directory() . '/*.json*' ) as $file ) {
+			$key = (string) strtok( basename( (string) $file ), '.' );
+
+			if ( ! isset( $index[ $key ] ) && (int) @filemtime( (string) $file ) < $cutoff ) { // phpcs:ignore
+				@unlink( (string) $file ); // phpcs:ignore
+				++$removed;
+			}
+		}
+
+		update_option( self::INDEX, $index, false );
+
+		return $removed;
 	}
 
 	/** "post-42" names one post; a Theme Builder key can change every page. */
@@ -482,13 +602,34 @@ final class UsedCss {
 		return $uploads['basedir'] . '/rc-rocket/used-css';
 	}
 
+	/** Stored gzipped, as WP Rocket does: a page's CSS is mostly repetition. */
 	private function file( string $url ): string {
+		return $this->directory() . '/' . self::key( $url ) . ( function_exists( 'gzencode' ) ? '.json.gz' : '.json' );
+	}
+
+	/** Where 0.12.8 builds before gzip were written. */
+	private function legacy_file( string $url ): string {
 		return $this->directory() . '/' . self::key( $url ) . '.json';
+	}
+
+	private function store( string $url, array $record ): bool {
+		$json = (string) wp_json_encode( $record );
+		$data = function_exists( 'gzencode' ) ? gzencode( $json, 6 ) : $json;
+
+		return Filesystem::ensure_dir( $this->directory() ) && is_string( $data ) && Filesystem::atomic_write( $this->file( $url ), $data );
 	}
 
 	/** @return array<string, mixed>|null */
 	private function load( string $url ): ?array {
 		$raw = @file_get_contents( $this->file( $url ) ); // phpcs:ignore
+
+		if ( is_string( $raw ) && str_ends_with( $this->file( $url ), '.gz' ) ) {
+			$raw = function_exists( 'gzdecode' ) ? @gzdecode( $raw ) : false; // phpcs:ignore
+		}
+
+		if ( ! is_string( $raw ) ) {
+			$raw = @file_get_contents( $this->legacy_file( $url ) ); // phpcs:ignore
+		}
 
 		if ( ! is_string( $raw ) ) {
 			return null;
@@ -497,6 +638,20 @@ final class UsedCss {
 		$data = json_decode( $raw, true );
 
 		return is_array( $data ) ? $data : null;
+	}
+
+	/**
+	 * When a page last used its prepared CSS, for the monthly clean-up.
+	 * Written at most once a day per page.
+	 */
+	private function seen( string $url ): void {
+		$index = get_option( self::INDEX, [] );
+		$key   = self::key( $url );
+
+		if ( is_array( $index ) && isset( $index[ $key ] ) && (int) ( $index[ $key ]['seen'] ?? 0 ) < time() - DAY_IN_SECONDS ) {
+			$index[ $key ]['seen'] = time();
+			update_option( self::INDEX, $index, false );
+		}
 	}
 
 	/** A small summary of what has been built, for the admin and System check. */
@@ -519,13 +674,28 @@ final class UsedCss {
 		update_option( self::INDEX, $index, false );
 	}
 
-	/** @return array{pages:int, service:int, service_on:bool, before:int, after:int, queued:int} */
+	/** @return array{pages:int, service:int, service_on:bool, before:int, after:int, queued:int, retrying:int, failed:int, failures:array} */
 	public function report(): array {
-		$index = get_option( self::INDEX, [] );
-		$index = is_array( $index ) ? $index : [];
-		$queue = get_option( self::QUEUE, [] );
+		$index    = get_option( self::INDEX, [] );
+		$index    = is_array( $index ) ? $index : [];
+		$queue    = get_option( self::QUEUE, [] );
+		$problems = array_filter( $index, static fn( $e ): bool => is_array( $e ) && ! empty( $e['failed'] ) );
+		$index    = array_diff_key( $index, $problems );
+		$gave_up  = array_filter( $problems, static fn( array $e ): bool => ! empty( $e['gave_up'] ) );
 
 		return [
+			'retrying' => count( $problems ) - count( $gave_up ),
+			'failed'   => count( $gave_up ),
+			'failures' => array_values(
+				array_map(
+					static fn( array $e ): array => [
+						'url'        => (string) ( $e['url'] ?? '' ),
+						'reason'     => (string) $e['failed'],
+						'next_retry' => (int) ( $e['next_retry'] ?? 0 ),
+					],
+					array_slice( $gave_up, 0, 10 )
+				)
+			),
 			'pages'   => count( $index ),
 			'service' => count( array_filter( $index, static fn( $e ): bool => is_array( $e ) && 'service' === ( $e['source'] ?? '' ) ) ),
 			'service_on' => '' !== self::service_url( $this->config ) && '' !== self::service_key( $this->config ),

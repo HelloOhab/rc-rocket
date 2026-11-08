@@ -93,7 +93,7 @@ function is_admin() { return (bool) ctx( 'admin' ); }
 function is_user_logged_in() { return (bool) ctx( 'logged_in' ); }
 function wp_doing_ajax() { return false; }
 function wp_doing_cron() { return false; }
-function post_password_required() { return false; }
+function post_password_required() { return (bool) ctx( 'password_required' ); }
 function get_queried_object_id() { return (int) ctx( 'object_id', 0 ); }
 function get_queried_object() { return ctx( 'object', null ); }
 function get_post_type( $id = 0 ) { return (string) ctx( 'post_type', 'page' ); }

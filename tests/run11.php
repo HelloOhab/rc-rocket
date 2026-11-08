@@ -199,8 +199,76 @@ ok( 'service: an export leaves the key out', ! str_contains( $exported, 's3cret'
 $cfg->import( $exported );
 ok( 'service: importing it keeps the site\'s key', 's3cret' === $cfg->get( 'assets.unused_css.service_key' ) );
 
+// ============ 34. Remove unused CSS: as WP Rocket manages it ============
+
+// Stored gzipped.
+$ucss->build( 'https://example.com/services/' );
+$files_now = glob( $ucss->directory() . '/*.json*' );
+ok( 'ucss: prepared CSS is stored gzipped', 1 === count( $files_now ) && str_ends_with( $files_now[0], '.json.gz' ) && false !== gzdecode( file_get_contents( $files_now[0] ) ) );
+
+// A file written by an earlier build, before gzip, is still read.
+$gz     = $files_now[0];
+$legacy = substr( $gz, 0, -3 );
+file_put_contents( $legacy, gzdecode( file_get_contents( $gz ) ) );
+unlink( $gz );
+ok( 'ucss: an older uncompressed file is still used', str_contains( $ucss->rewrite( $page ), 'rcr-used-css' ) );
+$ucss->forget_url( 'https://example.com/services/' );
+ok( 'ucss: forgetting a page removes either file', [] === glob( $ucss->directory() . '/*.json*' ) );
+
+// Password-protected pages are left alone.
+$ucss->build( 'https://example.com/services/' );
+$GLOBALS['ctx']['password_required'] = true;
+ok( 'ucss: a password-protected page is never trimmed', $ucss->rewrite( $page ) === $page );
+$GLOBALS['ctx']['password_required'] = false;
+
+// An ordinary cache clear keeps the prepared CSS; a Theme Builder save does not.
+$ucss->forget_on_purge( 'manual' );
+ok( 'ucss: clearing the page cache keeps the prepared CSS', str_contains( $ucss->rewrite( $page ), 'rcr-used-css' ) );
+$ucss->forget_on_purge( 'divi-theme-builder' );
+ok( 'ucss: a Theme Builder save prepares every page again', $ucss->rewrite( $page ) === $page );
+
+// A changed safelist prepares every page again; other settings do not.
+$ucss->build( 'https://example.com/services/' );
+$ucss->forget_on_safelist_change( [ 'assets' => [ 'unused_css' => [ 'safelist' => [ 'a' ] ] ], 'js' => [ 'x' => 1 ] ], [ 'assets' => [ 'unused_css' => [ 'safelist' => [ 'a' ] ] ], 'js' => [ 'x' => 2 ] ] );
+ok( 'ucss: other setting changes keep the prepared CSS', str_contains( $ucss->rewrite( $page ), 'rcr-used-css' ) );
+$ucss->forget_on_safelist_change( [ 'assets' => [ 'unused_css' => [ 'safelist' => [ 'a', 'b' ] ] ] ], [ 'assets' => [ 'unused_css' => [ 'safelist' => [ 'a' ] ] ] ] );
+ok( 'ucss: a safelist change prepares every page again', $ucss->rewrite( $page ) === $page );
+
+// The button: everything prepared again.
+$ucss->build( 'https://example.com/services/' );
+$ucss->clear();
+ok( 'ucss: "Clear unused CSS" forgets every page', 0 === $ucss->report()['pages'] && [] === glob( $ucss->directory() . '/*.json*' ) );
+
+// Failed builds wait 1, 2, 5, 10, 20 and 25 minutes, then three days.
+$GLOBALS['http']['https://example.com/services/?rcr_ucss=1'] = [ 'code' => 500, 'body' => 'down' ];
+$ucss->build( 'https://example.com/services/' );
+$GLOBALS['options']['rcrocket_ucss_queue'] = [];
+ok( 'ucss: a failed page is not retried on the next visit', $ucss->rewrite( $page ) === $page && [] === get_option( 'rcrocket_ucss_queue', [] ) );
+ok( 'ucss: it is being retried, not failed yet', 1 === $ucss->report()['retrying'] && 0 === $ucss->report()['failed'] );
+for ( $n = 0; $n < 6; $n++ ) {
+	$ucss->build( 'https://example.com/services/' );
+}
+$report = $ucss->report();
+ok( 'ucss: after 7 attempts the page counts as failed', 1 === $report['failed'] && 0 === $report['retrying'] );
+ok( 'ucss: with its address and reason', 'https://example.com/services/' === ( $report['failures'][0]['url'] ?? '' ) && 'the page did not load' === ( $report['failures'][0]['reason'] ?? '' ) );
+ok( 'ucss: and is tried again in three days', abs( ( $report['failures'][0]['next_retry'] ?? 0 ) - ( time() + 3 * DAY_IN_SECONDS ) ) < 5 );
+$GLOBALS['http']['https://example.com/services/?rcr_ucss=1'] = [ 'body' => $page ];
+$ucss->build( 'https://example.com/services/' );
+ok( 'ucss: a later success clears the failure', 0 === $ucss->report()['failed'] && 1 === $ucss->report()['pages'] );
+
+// Pages nobody opened for a month are cleaned up.
+$index = get_option( 'rcrocket_ucss_index' );
+foreach ( $index as $k => $e ) { $index[ $k ]['seen'] = time() - 31 * DAY_IN_SECONDS; }
+update_option( 'rcrocket_ucss_index', $index );
+foreach ( glob( $ucss->directory() . '/*.json*' ) as $f ) { touch( $f, time() - 31 * DAY_IN_SECONDS ); }
+ok( 'ucss: the monthly clean-up removes unused pages', 1 === $ucss->cleanup() && 0 === $ucss->report()['pages'] && [] === glob( $ucss->directory() . '/*.json*' ) );
+
+$ucss->build( 'https://example.com/services/' );
+ok( 'ucss: recently used pages survive the clean-up', 0 === $ucss->cleanup() && 1 === $ucss->report()['pages'] );
+
 $ucss->forget_all();
-ok( 'ucss: clearing everything empties the folder', [] === glob( $ucss->directory() . '/*.json' ) );
+ok( 'ucss: clearing everything empties the folder', [] === glob( $ucss->directory() . '/*.json*' ) );
+@unlink( $ucss->directory() . '/index.html' );
 @rmdir( $ucss->directory() );
 @rmdir( dirname( $ucss->directory() ) );
 @rmdir( $GLOBALS['upload_basedir'] );

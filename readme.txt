@@ -144,6 +144,21 @@ Switch it off under Safety.
   Set the address and key on the Assets tab or as RC_ROCKET_CSS_SERVICE
   and RC_ROCKET_CSS_KEY in wp-config.php. The key is HTTPS-only and left
   out of settings exports.
+* Managed the way WP Rocket manages its used CSS:
+  - Password-protected pages are never trimmed (the CSS would be learned
+    from the password form).
+  - A failed build is tried again after 1, 2, 5, 10, 20 and 25 minutes,
+    then the page counts as failed and waits three days. Failed pages and
+    the reason are shown on the Assets tab and in System check.
+  - Prepared CSS is stored gzipped, and what was prepared for pages nobody
+    has opened for a month is deleted daily.
+  - "Clear unused CSS" (Assets tab, and "Prepare page styles again" in the
+    Easy view) prepares every page again and clears the cached pages that
+    carry the old CSS. An ordinary cache clear no longer throws the
+    prepared CSS away: a changed stylesheet changes the page's signature
+    and is noticed on its own. A safelist change, a Theme Builder or Divi
+    Library save, and theme, plugin, menu and widget changes still prepare
+    every page again.
 * Stylesheets for some screen sizes only (WPForms' layout files use
   media='(min-width: 601px)') are now handled too, with their condition
   copied onto the inlined CSS.

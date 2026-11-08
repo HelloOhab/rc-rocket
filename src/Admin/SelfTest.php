@@ -583,6 +583,17 @@ final class SelfTest {
 					: sprintf( 'No pages prepared yet, %d waiting. Pages are prepared in the background after their first visit.', $used['queued'] ),
 				''
 			);
+
+			if ( $used['failed'] > 0 ) {
+				$first    = $used['failures'][0];
+				$checks[] = $this->check(
+					'unused_css_failed',
+					'Unused CSS: pages that could not be prepared',
+					self::WARN,
+					sprintf( '%d pages failed after 7 attempts and keep their normal stylesheets. First: %s (%s).', $used['failed'], $first['url'], $first['reason'] ),
+					'They are tried again in 3 days, or now with "Clear unused CSS" on the Assets tab. A page that keeps failing usually could not be loaded by the server itself (a firewall or a login wall).'
+				);
+			}
 		}
 
 		if ( null !== $markup && $settings->enabled( 'assets.fonts.localize' ) ) {

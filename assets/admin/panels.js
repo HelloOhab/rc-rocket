@@ -517,6 +517,16 @@
         .then(function () { setBusy(''); });
     };
 
+    var unusedCss = !!((props.settings.assets || {}).unused_css || {}).enabled;
+
+    var clearCss = function () {
+      setBusy('css');
+      props.api('/unused-css/clear', { method: 'POST' })
+        .then(function () { done('Done. Each page\'s styles are prepared again over the next few minutes, as visitors open it.'); })
+        .catch(failed)
+        .then(function () { setBusy(''); });
+    };
+
     var safe = function (on) {
       setBusy('safe');
       props.api('/settings', { method: 'POST', data: { general: { safe_mode: on } } })
@@ -553,7 +563,11 @@
       el('section', { className: 'rcr-easy__card' },
         el('h2', null, 'Clear the cache'),
         el('p', null, 'RC Rocket keeps ready-made copies of your pages so they open instantly. It refreshes a page by itself when you save it. Clear everything after changing something that appears on every page, such as the menu, header, footer or Divi Theme Options.'),
-        el(c.Button, { variant: 'primary', isBusy: busy === 'clear', disabled: !!busy, onClick: clear }, 'Clear the whole cache')
+        el(c.Button, { variant: 'primary', isBusy: busy === 'clear', disabled: !!busy, onClick: clear }, 'Clear the whole cache'),
+        unusedCss && el('p', { className: 'rcr-easy__also' },
+          'Pages still look wrong until someone scrolls? ',
+          el(c.Button, { variant: 'link', isBusy: busy === 'css', disabled: !!busy, onClick: clearCss }, 'Prepare page styles again')
+        )
       ),
 
       el('section', { className: 'rcr-easy__card' },

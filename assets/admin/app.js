@@ -576,6 +576,8 @@
   function V({ settings: t, update: n, status: s }) {
     let [a, i] = ce(null),
       [l, c] = ce(""),
+      [ucBusy, setUcBusy] = ce(!1),
+      [ucMsg, setUcMsg] = ce(""),
       d = t.assets || {},
       h = d.rules || [],
       u = d.bloat || {},
@@ -789,12 +791,53 @@
               : "No pages prepared yet. Each page is prepared in the background after its first visit, usually within a minute.",
             ur.queued > 0 ? ` ${ur.queued} waiting.` : "",
             ur.service_on && ur.pages > 0 ? ` ${ur.service} measured by the RC Rocket CSS service, the rest on this site.` : "",
-            " Clearing the cache prepares everything again.",
+            ur.retrying > 0 ? ` ${ur.retrying} being tried again.` : "",
+          ),
+        uc.enabled &&
+          ur &&
+          ur.failed > 0 &&
+          wp.element.createElement(
+            he,
+            { status: "warning", isDismissible: !1 },
+            ur.failed === 1
+              ? "1 page could not be prepared after 7 attempts and keeps its normal stylesheets; it is tried again in 3 days. "
+              : `${ur.failed} pages could not be prepared after 7 attempts and keep their normal stylesheets; they are tried again in 3 days. `,
+            ur.failures.map((o) => `${o.url} (${o.reason})`).join(", "),
+          ),
+        uc.enabled &&
+          wp.element.createElement(
+            "div",
+            { className: "rcr-actions" },
+            wp.element.createElement(
+              G,
+              {
+                variant: "secondary",
+                isBusy: ucBusy,
+                disabled: ucBusy,
+                onClick: async () => {
+                  setUcBusy(!0);
+                  setUcMsg("");
+                  try {
+                    await C("/unused-css/clear", { method: "POST" });
+                    setUcMsg("Cleared. Every page is prepared again over the next few minutes, as visitors open it.");
+                  } catch (o) {
+                    setUcMsg(o.message);
+                  }
+                  setUcBusy(!1);
+                },
+              },
+              "Clear unused CSS",
+            ),
+            wp.element.createElement(
+              "p",
+              { className: "rcr-note" },
+              ucMsg || "Prepares every page's CSS again. Clearing the page cache does not: changed stylesheets are noticed on their own. Use this when a page looks wrong only before someone scrolls.",
+            ),
           ),
         uc.enabled &&
           wp.element.createElement(wp.components.TextareaControl, {
             label: "Always keep CSS that mentions",
-            help: "One per line, for example a class name such as my-popup. Use this if something only looks right after the visitor scrolls or taps, then clear the cache.",
+            help: "One per line, for example a class name such as my-popup. Use this if something only looks right after the visitor scrolls or taps. Saving a change here prepares every page again.",
             value: ie(uc.safelist),
             onChange: (o) => n("assets", "unused_css", { ...uc, safelist: re(o) }),
           }),
