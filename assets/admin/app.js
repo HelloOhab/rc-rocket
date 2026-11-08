@@ -581,6 +581,8 @@
       u = d.bloat || {},
       f = d.fonts || {},
       b = d.divi || {},
+      uc = d.unused_css || {},
+      ur = s && s.unused_css,
       y = s && s.divi_assets;
     De(() => {
       k.getAssets().then(i);
@@ -767,6 +769,34 @@
             ),
           ),
         ),
+      ),
+      wp.element.createElement(
+        R,
+        { title: "Unused CSS", initialOpen: !!uc.enabled },
+        wp.element.createElement(A, {
+          label: "Remove unused CSS",
+          help: "Like WP Rocket's option of the same name. Each page gets only the CSS it uses, placed in the page itself, so it can appear without waiting for every stylesheet to download. The full stylesheets still load as soon as the visitor scrolls, taps or types, so nothing stays unstyled. Pages are prepared in the background after their first visit. On the test sites the page started appearing up to 1.4 seconds sooner on phones.",
+          checked: !!uc.enabled,
+          onChange: (o) => n("assets", "unused_css", { ...uc, enabled: o }),
+        }),
+        uc.enabled &&
+          ur &&
+          wp.element.createElement(
+            "p",
+            { className: "rcr-note" },
+            ur.pages > 0
+              ? `Ready on ${ur.pages} ${ur.pages === 1 ? "page" : "pages"}, with ${Math.round(100 - (100 * ur.after) / Math.max(1, ur.before))}% of their CSS removed.`
+              : "No pages prepared yet. Each page is prepared in the background after its first visit, usually within a minute.",
+            ur.queued > 0 ? ` ${ur.queued} waiting.` : "",
+            " Clearing the cache prepares everything again.",
+          ),
+        uc.enabled &&
+          wp.element.createElement(wp.components.TextareaControl, {
+            label: "Always keep CSS that mentions",
+            help: "One per line, for example a class name such as my-popup. Use this if something only looks right after the visitor scrolls or taps, then clear the cache.",
+            value: ie(uc.safelist),
+            onChange: (o) => n("assets", "unused_css", { ...uc, safelist: re(o) }),
+          }),
       ),
       wp.element.createElement(
         R,

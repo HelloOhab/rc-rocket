@@ -4,7 +4,7 @@ Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.7
+Stable tag: 0.12.8
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -108,6 +108,31 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.8 =
+* New: Remove unused CSS (Assets tab; part of the Fastest level, off
+  otherwise). Like WP Rocket's option of the same name: each page gets only
+  the CSS rules it can use, inlined where each stylesheet stood so the
+  cascade order is unchanged, and the full stylesheets load on the
+  visitor's first scroll, tap or keypress, so nothing stays unstyled.
+  Pages are prepared in the background after their first visit, by
+  loading the page once and reading the site's own stylesheets from disk.
+  A rule is kept when every class, id and element it names occurs in the
+  page or in the page's own scripts (where classes added later, such as an
+  open menu, are spelled out); anything uncertain is kept.
+* Measured on a Divi 4 and a Divi 5 home page on a throttled phone: first
+  paint 1.75 s -> 0.34 s and 1.58 s -> 0.99 s, largest paint 1.3 s and
+  0.6 s sooner, 58-82% of the CSS removed. Six pages compared pixel by
+  pixel before and after interaction, and with the mobile menu open while
+  the full stylesheets were blocked, looked identical.
+* Never applied for logged-in visitors, in the Divi builder, in safe mode,
+  on searches, carts, checkouts and addresses with their own query
+  parameters, or to a page Divi rendered while rebuilding its CSS. Saving a
+  post, clearing the cache, and menu, widget, theme and plugin changes
+  prepare pages again; a changed stylesheet version does too. Other
+  hosts' stylesheets, print stylesheets and links marked data-no-optimize
+  are left alone. Per-page switch in the editor box; a safelist for CSS
+  that must always be kept; System check reports pages prepared.
 
 = 0.12.7 =
 From updating a WooCommerce site (ghostud.com) to 0.12.6.

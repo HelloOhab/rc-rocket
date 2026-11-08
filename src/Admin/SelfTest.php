@@ -571,6 +571,19 @@ final class SelfTest {
 			$recorded > 0 ? '' : 'Visit a few pages of your site logged out to build the inventory.'
 		);
 
+		if ( $settings->enabled( 'assets.unused_css.enabled' ) ) {
+			$used     = $this->container->get( 'assets.used_css' )->report();
+			$checks[] = $this->check(
+				'unused_css',
+				'Unused CSS',
+				$used['pages'] > 0 ? self::PASS : self::INFO,
+				$used['pages'] > 0
+					? sprintf( '%d pages prepared, %d%% of their CSS removed. %d waiting.', $used['pages'], (int) round( 100 - 100 * $used['after'] / max( 1, $used['before'] ) ), $used['queued'] )
+					: sprintf( 'No pages prepared yet, %d waiting. Pages are prepared in the background after their first visit.', $used['queued'] ),
+				''
+			);
+		}
+
 		if ( null !== $markup && $settings->enabled( 'assets.fonts.localize' ) ) {
 			$remote = str_contains( $markup, 'fonts.googleapis.com' );
 			$report = $this->container->get( 'assets.fonts' )->report();

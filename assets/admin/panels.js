@@ -400,7 +400,7 @@
   var LEVELS = [
     { name: 'safe', title: 'Careful', text: 'Speeds up images, fonts and caching, and never changes how a page behaves. Choose this if the site uses many plugins or something stopped working on a faster level.' },
     { name: 'recommended', title: 'Recommended', text: 'The right choice for almost every Divi site. Also waits to load scripts until a visitor scrolls or taps. If visitors start seeing errors, RC Rocket switches itself back automatically and emails you.' },
-    { name: 'maximum', title: 'Fastest', text: 'Everything above and a few extra tricks. After switching, look through your main pages on a phone: popups, sticky headers and overlapping sections are the things to check.' }
+    { name: 'maximum', title: 'Fastest', text: 'Everything above, plus each page gets only the CSS it uses, and a few extra tricks. After switching, look through your main pages on a phone: popups, sticky headers and overlapping sections are the things to check.' }
   ];
 
   var STATUS_WORDS = { fail: 'Needs fixing', warn: 'Worth a look', pass: 'OK', info: 'Info' };

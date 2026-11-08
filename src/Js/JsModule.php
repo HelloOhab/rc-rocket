@@ -460,7 +460,7 @@ final class JsModule implements Module {
 
 		// Our own scripts are never delayed, regardless of what the
 		// user's exclusion list says.
-		foreach ( [ 'rcr-no-delay', 'rcr-beacon', 'rcr-bg-video', 'rcr-embeds', 'rcr-delay-loader', 'rcr-divi-nonces', 'rcr-lcp', 'rcr-bg-lazy' ] as $own ) {
+		foreach ( [ 'rcr-no-delay', 'rcr-beacon', 'rcr-bg-video', 'rcr-embeds', 'rcr-delay-loader', 'rcr-divi-nonces', 'rcr-lcp', 'rcr-bg-lazy', 'rcr-css-loader' ] as $own ) {
 			if ( str_contains( $attributes, $own ) ) {
 				return 'keep';
 			}

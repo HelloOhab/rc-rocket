@@ -67,7 +67,7 @@ function is_ssl() { return true; }
 function size_format( $b, $d = 0 ) { return $b . 'B'; }
 function human_time_diff( $a, $b ) { return '1 hour'; }
 function wp_get_upload_dir() {
-	return [ 'basedir' => '/wp/wp-content/uploads', 'baseurl' => 'https://example.com/wp-content/uploads' ];
+	return [ 'basedir' => $GLOBALS['upload_basedir'] ?? '/wp/wp-content/uploads', 'baseurl' => 'https://example.com/wp-content/uploads' ];
 }
 
 // Conditional tags driven by $GLOBALS['ctx'].
@@ -116,9 +116,17 @@ function set_transient( $k, $v, $ttl = 0 ) {
 }
 function delete_transient( $k ) { unset( $GLOBALS['transients'][ $k ] ); return true; }
 function current_user_can( $c ) { return true; }
-function wp_remote_get( $u, $a = [] ) { return new WP_Error( 'offline', 'no network in tests' ); }
-function wp_remote_retrieve_body( $r ) { return ''; }
-function wp_remote_retrieve_response_code( $r ) { return 0; }
+// Offline, unless a test supplies responses: $GLOBALS['http'][ $url ] = [ 'code' => 200, 'body' => '…' ].
+function wp_remote_get( $u, $a = [] ) {
+	if ( isset( $GLOBALS['http'][ $u ] ) ) {
+		$GLOBALS['http_log'][] = $u;
+		return $GLOBALS['http'][ $u ] + [ 'code' => 200, 'body' => '', 'headers' => [] ];
+	}
+	return new WP_Error( 'offline', 'no network in tests' );
+}
+function wp_remote_retrieve_body( $r ) { return is_array( $r ) ? (string) $r['body'] : ''; }
+function wp_remote_retrieve_response_code( $r ) { return is_array( $r ) ? (int) $r['code'] : 0; }
+function wp_remote_retrieve_header( $r, $h ) { return is_array( $r ) ? (string) ( $r['headers'][ strtolower( $h ) ] ?? '' ) : ''; }
 function is_wp_error( $t ) { return $t instanceof WP_Error; }
 function wp_scripts() { return (object) [ 'done' => [], 'registered' => [] ]; }
 function wp_styles() { return (object) [ 'done' => [], 'registered' => [] ]; }

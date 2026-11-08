@@ -581,6 +581,7 @@ final class RestController {
 				'divi'     => $divi->report(),
 				'fonts'    => $this->container->get( 'assets.fonts' )->report(),
 				'divi_assets' => $this->container->get( 'assets.divi' )->report(),
+				'unused_css'  => $this->container->get( 'assets.used_css' )->report(),
 				'hosting'  => $hosting->report() + [
 					'image_conversion_allowed' => MediaModule::conversion_allowed( $hosting ),
 				],

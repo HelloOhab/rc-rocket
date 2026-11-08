@@ -26,7 +26,7 @@ $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LI
 
 wp_cache_flush();
 
-foreach ( [ 'rc-rocket/cache/cleanup', 'rc-rocket/preload/batch', 'rc-rocket/fonts/refresh', 'rc-rocket/fonts/localize', 'rc-rocket/database/cleanup', 'rc-rocket/host/deferred-purge', 'rc-rocket/safe-mode/expired' ] as $rcrocket_hook ) {
+foreach ( [ 'rc-rocket/cache/cleanup', 'rc-rocket/preload/batch', 'rc-rocket/fonts/refresh', 'rc-rocket/fonts/localize', 'rc-rocket/database/cleanup', 'rc-rocket/host/deferred-purge', 'rc-rocket/safe-mode/expired', 'rc-rocket/unused-css/build' ] as $rcrocket_hook ) {
 	wp_unschedule_hook( $rcrocket_hook );
 }
 
