@@ -63,7 +63,7 @@
           wp.element.createElement("strong", null, y.label, " detected."),
           " ",
           y.reason,
-          " Everything else in RC Rocket still applies, and it is where your remaining speed is.",
+          " Everything else in Rhythm Speed Optimizer still applies, and it is where your remaining speed is.",
         ),
       !r &&
         h.foreign_dropin &&
@@ -72,7 +72,7 @@
           { status: "error", isDismissible: !1 },
           "Another plugin owns ",
           wp.element.createElement("code", null, "advanced-cache.php"),
-          ". Deactivate it, then reactivate RC Rocket. Two page caches on one site fight each other.",
+          ". Deactivate it, then reactivate Rhythm Speed Optimizer. Two page caches on one site fight each other.",
         ),
       !r &&
         !h.wp_cache &&
@@ -318,7 +318,7 @@
         { title: "Tracking cookies", initialOpen: !1 },
         wp.element.createElement(P, {
           label: "Don't let tracking cookies block caching",
-          help: "A page that sets a cookie from the server is never cached by Kinsta, WP Engine, Cloudflare or RC Rocket. Meta Pixel for WordPress sets _fbp and _fbc this way on every page. This removes those cookies from pages for logged-out visitors; the pixel still sets them in the browser.",
+          help: "A page that sets a cookie from the server is never cached by Kinsta, WP Engine, Cloudflare or Rhythm Speed Optimizer. Meta Pixel for WordPress sets _fbp and _fbc this way on every page. This removes those cookies from pages for logged-out visitors; the pixel still sets them in the browser.",
           checked: !!s.strip_tracking_cookies,
           onChange: a("strip_tracking_cookies"),
         }),
@@ -362,7 +362,7 @@
           wp.element.createElement("strong", null, "Troubleshooting:"),
           " if a section background or hero video stops rendering, switch off ",
           wp.element.createElement("em", null, "Clear Divi's asset cache too"),
-          ", clear the cache once, and reload. That isolates Divi's generated CSS from anything RC Rocket does to it.",
+          ", clear the cache once, and reload. That isolates Divi's generated CSS from anything Rhythm Speed Optimizer does to it.",
         ),
       ),
       wp.element.createElement(
@@ -790,7 +790,7 @@
               ? `Ready on ${ur.pages} ${ur.pages === 1 ? "page" : "pages"}, with ${Math.round(100 - (100 * ur.after) / Math.max(1, ur.before))}% of their CSS removed.`
               : "No pages prepared yet. Each page is prepared in the background after its first visit, usually within a minute.",
             ur.queued > 0 ? ` ${ur.queued} waiting.` : "",
-            ur.service_on && ur.pages > 0 ? ` ${ur.service} measured by the RC Rocket CSS service, the rest on this site.` : "",
+            ur.service_on && ur.pages > 0 ? ` ${ur.service} measured by the Rhythm Speed Optimizer CSS service, the rest on this site.` : "",
             ur.retrying > 0 ? ` ${ur.retrying} being tried again.` : "",
           ),
         uc.enabled &&
@@ -845,7 +845,7 @@
           wp.element.createElement(
             "p",
             { className: "rcr-note" },
-            wp.element.createElement("strong", null, "RC Rocket CSS service (optional). "),
+            wp.element.createElement("strong", null, "Rhythm Speed Optimizer CSS service (optional). "),
             "Like WP Rocket, pages can be measured in a real browser on the agency's service instead of on this site: more precise, and none of the work runs on this server. The result is still stored and served from this site. Leave both fields empty to prepare pages here. If the service is ever unavailable, this site prepares the page itself.",
           ),
         uc.enabled &&
@@ -1121,7 +1121,7 @@
           me,
           { status: "info", isDismissible: !1 },
           s.hosting.label,
-          " does not permit server-based image conversion, so RC Rocket does not attempt it. Compress and convert with a cloud-based optimizer; everything below still applies.",
+          " does not permit server-based image conversion, so Rhythm Speed Optimizer does not attempt it. Compress and convert with a cloud-based optimizer; everything below still applies.",
         ),
       wp.element.createElement(
         L,
@@ -1204,7 +1204,7 @@
             null,
             "You usually do not need to add one.",
           ),
-          " If the section has a Background Image set in Divi alongside the video, RC Rocket finds it and uses it as the poster automatically, per section. Add one below only to override that, or where Divi has no fallback image.",
+          " If the section has a Background Image set in Divi alongside the video, Rhythm Speed Optimizer finds it and uses it as the poster automatically, per section. Add one below only to override that, or where Divi has no fallback image.",
         ),
         wp.element.createElement(_, {
           label: "Manage background videos",
@@ -1444,7 +1444,7 @@
           { status: "warning", isDismissible: !1 },
           "Safe mode is active (",
           a.safe_mode.reason,
-          "). RC Rocket is not changing any page output right now.",
+          "). Rhythm Speed Optimizer is not changing any page output right now.",
           a.safe_mode.auto_reason &&
             wp.element.createElement(
               wp.element.Fragment,
@@ -1481,8 +1481,8 @@
           onChange: (e) => n("general", "skip_logged_in", e),
         }),
         wp.element.createElement(E, {
-          label: "Let AI assistants use RC Rocket (MCP)",
-          help: "Registers RC Rocket's abilities with WordPress (6.9 or newer). With the MCP Adapter plugin, an assistant such as Claude can check the status, read errors, clear the cache or apply a preset. It can only do what the user it signs in as is allowed to, and it asks before deleting anything.",
+          label: "Let AI assistants use Rhythm Speed Optimizer (MCP)",
+          help: "Registers Rhythm Speed Optimizer's abilities with WordPress (6.9 or newer). With the MCP Adapter plugin, an assistant such as Claude can check the status, read errors, clear the cache or apply a preset. It can only do what the user it signs in as is allowed to, and it asks before deleting anything.",
           checked: f.abilities !== !1,
           onChange: (e) => n("general", "abilities", e),
         }),
@@ -1945,7 +1945,7 @@
             wp.element.createElement(
               "h1",
               { className: "rcr-title" },
-              "RC Rocket",
+              "Rhythm Speed Optimizer",
             ),
             wp.element.createElement(
               "p",

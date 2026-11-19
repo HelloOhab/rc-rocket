@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name:       RC Rocket
+ * Plugin Name:       Rhythm Speed Optimizer
  * Plugin URI:        https://rhythmco.com/
  * Description:       Performance tuning built around Divi. Asset control, media delivery, JavaScript timing and a safety net that switches itself off when something breaks.
- * Version:           0.12.8
+ * Version:           0.12.9
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Author:            Abdul
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION  = '0.12.8';
+const VERSION  = '0.12.9';
 const MIN_PHP  = '8.1';
 const MIN_WP   = '6.5';
 
@@ -50,7 +50,7 @@ if ( ! requirements_met() ) {
 				esc_html(
 					sprintf(
 						/* translators: 1: required PHP version, 2: required WP version */
-						__( 'RC Rocket needs PHP %1$s and WordPress %2$s or newer. It has not been loaded.', 'rc-rocket' ),
+						__( 'Rhythm Speed Optimizer needs PHP %1$s and WordPress %2$s or newer. It has not been loaded.', 'rc-rocket' ),
 						MIN_PHP,
 						MIN_WP
 					)

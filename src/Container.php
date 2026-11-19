@@ -34,7 +34,7 @@ final class Container {
 		}
 
 		if ( ! isset( $this->factories[ $id ] ) ) {
-			throw new \RuntimeException( sprintf( 'RC Rocket: service "%s" is not registered.', $id ) );
+			throw new \RuntimeException( sprintf( 'Rhythm Speed Optimizer: service "%s" is not registered.', $id ) );
 		}
 
 		$this->resolved[ $id ] = ( $this->factories[ $id ] )( $this );

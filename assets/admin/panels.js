@@ -399,7 +399,7 @@
 
   var LEVELS = [
     { name: 'safe', title: 'Careful', text: 'Speeds up images, fonts and caching, and never changes how a page behaves. Choose this if the site uses many plugins or something stopped working on a faster level.' },
-    { name: 'recommended', title: 'Recommended', text: 'The right choice for almost every Divi site. Also waits to load scripts until a visitor scrolls or taps. If visitors start seeing errors, RC Rocket switches itself back automatically and emails you.' },
+    { name: 'recommended', title: 'Recommended', text: 'The right choice for almost every Divi site. Also waits to load scripts until a visitor scrolls or taps. If visitors start seeing errors, Rhythm Speed Optimizer switches itself back automatically and emails you.' },
     { name: 'maximum', title: 'Fastest', text: 'Everything above, plus each page gets only the CSS it uses, and a few extra tricks. After switching, look through your main pages on a phone: popups, sticky headers and overlapping sections are the things to check.' }
   ];
 
@@ -409,28 +409,28 @@
   // check's own text stays available under "Technical details".
   var PLAIN = {
     page_cache_hit: ['Pages are not being cached', 'Your host normally keeps a ready-made copy of each page so it opens instantly. Right now every visitor waits for the page to be built from scratch, which is slow.', 'Ask whoever looks after the site to check the technical details below. Often a tracking or cookie-banner plugin causes it.'],
-    kinsta_purge: ['RC Rocket cannot clear Kinsta\'s cache', 'After you change the design, visitors may keep seeing the old version for a while.', 'After design changes, clear the cache in MyKinsta as well, and ask Kinsta support to check their "MU plugin".'],
-    divi: ['Divi was not found', 'RC Rocket works best with the Divi theme. Without it, the Divi-specific speed features stay off.', 'Nothing to do if this site does not use Divi.'],
-    updates: ['Plugin updates', 'A newer version of RC Rocket may be available.', 'Update RC Rocket from Dashboard → Updates.'],
-    uploads: ['RC Rocket cannot save files', 'The uploads folder cannot be written to, so fonts and some speed features cannot work.', 'Ask your host to fix the permissions of the wp-content/uploads folder.'],
-    safe_mode: ['Safe mode is on', 'RC Rocket is not speeding up the site for visitors right now.', 'Once the problem that led to it is sorted, turn RC Rocket back on below.'],
+    kinsta_purge: ['Rhythm Speed Optimizer cannot clear Kinsta\'s cache', 'After you change the design, visitors may keep seeing the old version for a while.', 'After design changes, clear the cache in MyKinsta as well, and ask Kinsta support to check their "MU plugin".'],
+    divi: ['Divi was not found', 'Rhythm Speed Optimizer works best with the Divi theme. Without it, the Divi-specific speed features stay off.', 'Nothing to do if this site does not use Divi.'],
+    updates: ['Plugin updates', 'A newer version of Rhythm Speed Optimizer may be available.', 'Update Rhythm Speed Optimizer from Dashboard → Updates.'],
+    uploads: ['Rhythm Speed Optimizer cannot save files', 'The uploads folder cannot be written to, so fonts and some speed features cannot work.', 'Ask your host to fix the permissions of the wp-content/uploads folder.'],
+    safe_mode: ['Safe mode is on', 'Rhythm Speed Optimizer is not speeding up the site for visitors right now.', 'Once the problem that led to it is sorted, turn Rhythm Speed Optimizer back on below.'],
     modules: ['All speed features are off', 'Nothing is being optimized.', 'Choose a level below, such as Recommended.'],
-    fetch: ['RC Rocket cannot open your home page', 'To run these checks, RC Rocket visits your own home page, and that visit failed. Your site itself may be fine.', 'Ask your host whether "loopback requests" are blocked.'],
-    pipeline: ['Visitors are not getting the faster version', 'The home page came back without RC Rocket\'s changes.', 'Clear the whole cache below, then press "Check again".'],
-    beacon: ['Error reporting is not running', 'RC Rocket cannot notice if a page breaks for visitors, so the automatic safety switch cannot help.', 'Clear the whole cache below, then press "Check again".'],
+    fetch: ['Rhythm Speed Optimizer cannot open your home page', 'To run these checks, Rhythm Speed Optimizer visits your own home page, and that visit failed. Your site itself may be fine.', 'Ask your host whether "loopback requests" are blocked.'],
+    pipeline: ['Visitors are not getting the faster version', 'The home page came back without Rhythm Speed Optimizer\'s changes.', 'Clear the whole cache below, then press "Check again".'],
+    beacon: ['Error reporting is not running', 'Rhythm Speed Optimizer cannot notice if a page breaks for visitors, so the automatic safety switch cannot help.', 'Clear the whole cache below, then press "Check again".'],
     animations: ['Many animations on the home page', 'Each animated element starts hidden until it plays, which makes the page feel slower, especially on phones.', 'Consider the Fastest level, or remove animations you do not need in Divi.'],
     defer: ['Scripts are not being deferred', 'Scripts load in a way that holds up the page.', 'Choose the Recommended level below.'],
     delay: ['Scripts are not being delayed', 'Scripts such as chat widgets and trackers load before the page is shown.', 'Choose the Recommended level below.'],
     jquery: ['A common script is loading in the wrong order', 'jQuery, a script most plugins need, is not ready when the page expects it. This can break buttons, sliders or forms.', 'Pass the technical details below to whoever looks after the site.'],
     lazy: ['Images load all at once', 'Images further down the page are downloaded before anyone scrolls to them.', 'Choose the Recommended level below.'],
-    lcp: ['The main image is not marked as most important', 'Browsers cannot tell which picture to load first, so the top of the page appears later.', 'Usually nothing to do on Divi: the main picture is often a section background, which RC Rocket handles separately.'],
-    video_poster: ['A background video has no still image', 'Until the video starts there is an empty space, and phones on slow connections may show nothing at all.', 'In Divi, give the same section a Background Image. RC Rocket uses it automatically.'],
-    video: ['A background video loads straight away', 'The video downloads before the rest of the page, which is heavy on phones.', 'In Divi, give the same section a Background Image. RC Rocket can then show it first.'],
+    lcp: ['The main image is not marked as most important', 'Browsers cannot tell which picture to load first, so the top of the page appears later.', 'Usually nothing to do on Divi: the main picture is often a section background, which Rhythm Speed Optimizer handles separately.'],
+    video_poster: ['A background video has no still image', 'Until the video starts there is an empty space, and phones on slow connections may show nothing at all.', 'In Divi, give the same section a Background Image. Rhythm Speed Optimizer uses it automatically.'],
+    video: ['A background video loads straight away', 'The video downloads before the rest of the page, which is heavy on phones.', 'In Divi, give the same section a Background Image. Rhythm Speed Optimizer can then show it first.'],
     video_source: ['A video is stored on another website', 'If that website changes or removes the file, the video disappears from your page.', 'Upload the video to your own Media Library and use that copy.'],
-    inventory: ['RC Rocket is still learning your pages', 'It records which files each page uses. This fills in by itself as people visit.', 'Nothing to do. It completes within a day of normal traffic.'],
+    inventory: ['Rhythm Speed Optimizer is still learning your pages', 'It records which files each page uses. This fills in by itself as people visit.', 'Nothing to do. It completes within a day of normal traffic.'],
     fonts: ['Fonts still come from Google', 'Copying them to your own site failed, so every visit asks Google first.', 'Press "Check again" tomorrow. If it persists, pass the details on.'],
     errors: ['Visitors saw errors in the last day', 'Something on the site is not working for some visitors.', 'Pass the technical details below to whoever looks after the site. The full list is under Advanced → Safety.'],
-    divi_perf: ['Some of Divi\'s speed options are off', 'Divi has its own speed settings, and they work well alongside RC Rocket.', 'In Divi → Theme Options → Performance, switch on the options listed below.'],
+    divi_perf: ['Some of Divi\'s speed options are off', 'Divi has its own speed settings, and they work well alongside Rhythm Speed Optimizer.', 'In Divi → Theme Options → Performance, switch on the options listed below.'],
   };
 
   function Health(props) {
@@ -504,7 +504,7 @@
     var level = function (name) {
       setBusy('level-' + name);
       props.api('/preset', { method: 'POST', data: { name: name } })
-        .then(function (r) { props.onApplied(r.settings); done('Done. RC Rocket now uses the ' + LEVELS.filter(function (l) { return l.name === name; })[0].title + ' level. Visitors see the change on their next page.'); })
+        .then(function (r) { props.onApplied(r.settings); done('Done. Rhythm Speed Optimizer now uses the ' + LEVELS.filter(function (l) { return l.name === name; })[0].title + ' level. Visitors see the change on their next page.'); })
         .catch(failed)
         .then(function () { setBusy(''); });
     };
@@ -532,7 +532,7 @@
       props.api('/settings', { method: 'POST', data: { general: { safe_mode: on } } })
         .then(function (r) {
           props.onApplied(r.settings);
-          done(on ? 'Safe mode is on: visitors get your site without any RC Rocket speed features. Turn it off again once the problem is sorted.' : 'Safe mode is off: RC Rocket is speeding up your site again.');
+          done(on ? 'Safe mode is on: visitors get your site without any Rhythm Speed Optimizer speed features. Turn it off again once the problem is sorted.' : 'Safe mode is off: Rhythm Speed Optimizer is speeding up your site again.');
         })
         .catch(failed)
         .then(function () { setBusy(''); });
@@ -540,12 +540,12 @@
 
     return el('div', { className: 'rcr-easy' },
       message && el(c.Notice, { status: message.status, onRemove: function () { setMessage(null); } }, message.text),
-      safeMode && el(c.Notice, { status: 'warning', isDismissible: false }, 'Safe mode is on, so RC Rocket is not speeding up your site right now.'),
+      safeMode && el(c.Notice, { status: 'warning', isDismissible: false }, 'Safe mode is on, so Rhythm Speed Optimizer is not speeding up your site right now.'),
 
       el(Health, { api: props.api }),
 
       el('section', { className: 'rcr-easy__card' },
-        el('h2', null, 'How hard should RC Rocket work?'),
+        el('h2', null, 'How hard should Rhythm Speed Optimizer work?'),
         current === 'custom' && el('p', { className: 'rcr-note' }, 'Someone has fine-tuned the settings by hand, so none of these is selected. Choosing one replaces those changes (your exclusions are kept).'),
         props.dirty && el(c.Notice, { status: 'warning', isDismissible: false }, 'You have unsaved changes in Advanced. Save or discard them first.'),
         el('div', { className: 'rcr-easy__levels' },
@@ -562,7 +562,7 @@
 
       el('section', { className: 'rcr-easy__card' },
         el('h2', null, 'Clear the cache'),
-        el('p', null, 'RC Rocket keeps ready-made copies of your pages so they open instantly. It refreshes a page by itself when you save it. Clear everything after changing something that appears on every page, such as the menu, header, footer or Divi Theme Options.'),
+        el('p', null, 'Rhythm Speed Optimizer keeps ready-made copies of your pages so they open instantly. It refreshes a page by itself when you save it. Clear everything after changing something that appears on every page, such as the menu, header, footer or Divi Theme Options.'),
         el(c.Button, { variant: 'primary', isBusy: busy === 'clear', disabled: !!busy, onClick: clear }, 'Clear the whole cache'),
         unusedCss && el('p', { className: 'rcr-easy__also' },
           'Pages still look wrong until someone scrolls? ',
@@ -574,16 +574,16 @@
         el('h2', null, 'Something looks wrong on the site?'),
         el('ol', { className: 'rcr-easy__steps' },
           el('li', null,
-            el('strong', null, 'Find out whether RC Rocket is the cause. '),
-            'Open your home page with RC Rocket switched off, just for you: ',
-            el('a', { href: compare, target: '_blank', rel: 'noopener noreferrer' }, 'open without RC Rocket'),
-            '. To check another page, add ', el('code', null, '?rcr_safe=1'), ' to the end of its address. If it looks right that way, RC Rocket is involved.'
+            el('strong', null, 'Find out whether Rhythm Speed Optimizer is the cause. '),
+            'Open your home page with Rhythm Speed Optimizer switched off, just for you: ',
+            el('a', { href: compare, target: '_blank', rel: 'noopener noreferrer' }, 'open without Rhythm Speed Optimizer'),
+            '. To check another page, add ', el('code', null, '?rcr_safe=1'), ' to the end of its address. If it looks right that way, Rhythm Speed Optimizer is involved.'
           ),
           el('li', null,
             el('strong', null, 'Switch the speed features off for everyone while it gets fixed. '),
-            'Visitors then get the site exactly as it is without RC Rocket. Nothing is deleted, and you can switch back at any time.',
+            'Visitors then get the site exactly as it is without Rhythm Speed Optimizer. Nothing is deleted, and you can switch back at any time.',
             el('div', { className: 'rcr-easy__action' },
-              el(c.Button, { variant: safeMode ? 'primary' : 'secondary', isDestructive: !safeMode, isBusy: busy === 'safe', disabled: !!busy, onClick: function () { safe(!safeMode); } }, safeMode ? 'Turn RC Rocket back on' : 'Turn on Safe mode')
+              el(c.Button, { variant: safeMode ? 'primary' : 'secondary', isDestructive: !safeMode, isBusy: busy === 'safe', disabled: !!busy, onClick: function () { safe(!safeMode); } }, safeMode ? 'Turn Rhythm Speed Optimizer back on' : 'Turn on Safe mode')
             )
           ),
           el('li', null,

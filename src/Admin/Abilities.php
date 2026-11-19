@@ -50,7 +50,7 @@ final class Abilities {
 		wp_register_ability_category(
 			self::CATEGORY,
 			[
-				'label'       => __( 'RC Rocket', 'rc-rocket' ),
+				'label'       => __( 'Rhythm Speed Optimizer', 'rc-rocket' ),
 				'description' => __( 'Page cache, speed optimizations and diagnostics for Divi sites.', 'rc-rocket' ),
 			]
 		);
@@ -63,8 +63,8 @@ final class Abilities {
 
 		$this->ability(
 			'get-status',
-			__( 'Get RC Rocket status', 'rc-rocket' ),
-			__( 'A summary of RC Rocket on this site: version, host and who serves the page cache, the active preset, which optimizations are on, safe mode, cached page count, recent front-end errors and how many pages have a measured hero image. Start here before changing anything.', 'rc-rocket' ),
+			__( 'Get Rhythm Speed Optimizer status', 'rc-rocket' ),
+			__( 'A summary of Rhythm Speed Optimizer on this site: version, host and who serves the page cache, the active preset, which optimizations are on, safe mode, cached page count, recent front-end errors and how many pages have a measured hero image. Start here before changing anything.', 'rc-rocket' ),
 			null,
 			fn() => $this->status(),
 			$manage,
@@ -74,7 +74,7 @@ final class Abilities {
 		$this->ability(
 			'run-system-check',
 			__( 'Run the system check', 'rc-rocket' ),
-			__( 'Runs RC Rocket\'s health checks (cache loader, host cache, file permissions, Divi, scheduled tasks) and returns each check with its result and advice.', 'rc-rocket' ),
+			__( 'Runs Rhythm Speed Optimizer\'s health checks (cache loader, host cache, file permissions, Divi, scheduled tasks) and returns each check with its result and advice.', 'rc-rocket' ),
 			null,
 			fn() => ( new SelfTest( $this->container ) )->run(),
 			$manage,
@@ -93,7 +93,7 @@ final class Abilities {
 
 		$this->ability(
 			'get-settings',
-			__( 'Get RC Rocket settings', 'rc-rocket' ),
+			__( 'Get Rhythm Speed Optimizer settings', 'rc-rocket' ),
 			__( 'Current settings, or one section of them (cache, media, js, assets, preload, database, safety, general).', 'rc-rocket' ),
 			[
 				'type'       => 'object',
@@ -118,7 +118,7 @@ final class Abilities {
 		$this->ability(
 			'get-hero-measurements',
 			__( 'Get measured hero images', 'rc-rocket' ),
-			__( 'For each measured page, the element that is its Largest Contentful Paint on phones and on computers (an image, a Divi background, a video poster or text) and its URL. RC Rocket loads these first.', 'rc-rocket' ),
+			__( 'For each measured page, the element that is its Largest Contentful Paint on phones and on computers (an image, a Divi background, a video poster or text) and its URL. Rhythm Speed Optimizer loads these first.', 'rc-rocket' ),
 			null,
 			static fn() => [ 'pages' => Lcp::listing() ],
 			$manage,
@@ -127,7 +127,7 @@ final class Abilities {
 
 		$this->ability(
 			'get-page-options',
-			__( 'Get a page\'s RC Rocket options', 'rc-rocket' ),
+			__( 'Get a page\'s Rhythm Speed Optimizer options', 'rc-rocket' ),
 			__( 'Whether one post or page is excluded from the cache, and which optimizations are switched off for it alone.', 'rc-rocket' ),
 			[
 				'type'       => 'object',
@@ -229,7 +229,7 @@ final class Abilities {
 
 		$this->ability(
 			'update-settings',
-			__( 'Change RC Rocket settings', 'rc-rocket' ),
+			__( 'Change Rhythm Speed Optimizer settings', 'rc-rocket' ),
 			__( 'Changes individual settings by dotted path, for example {"js.delay": false, "media.skip_first": 3}. Only existing settings can be changed, and each value must have the same type as the current one. Read the settings first. The change is recorded in the settings history and can be rolled back there.', 'rc-rocket' ),
 			[
 				'type'       => 'object',
@@ -253,7 +253,7 @@ final class Abilities {
 
 		$this->ability(
 			'set-page-options',
-			__( 'Set a page\'s RC Rocket options', 'rc-rocket' ),
+			__( 'Set a page\'s Rhythm Speed Optimizer options', 'rc-rocket' ),
 			__( 'Excludes one post or page from the cache, or switches individual optimizations off for it alone, without touching the rest of the site. Use get-page-options to see the names of the optimizations.', 'rc-rocket' ),
 			[
 				'type'       => 'object',
@@ -293,7 +293,7 @@ final class Abilities {
 		$this->ability(
 			'set-safe-mode',
 			__( 'Switch safe mode on or off', 'rc-rocket' ),
-			__( 'Safe mode stops every optimization (the page cache keeps working) and clears cached pages. Switch it on to check whether RC Rocket causes a problem; switching it off also ends an automatic rollback.', 'rc-rocket' ),
+			__( 'Safe mode stops every optimization (the page cache keeps working) and clears cached pages. Switch it on to check whether Rhythm Speed Optimizer causes a problem; switching it off also ends an automatic rollback.', 'rc-rocket' ),
 			[
 				'type'       => 'object',
 				'required'   => [ 'enabled' ],
@@ -496,7 +496,7 @@ final class Abilities {
 
 			foreach ( self::OBJECT_LISTS as $list ) {
 				if ( $path === $list || str_starts_with( $path, $list . '.' ) ) {
-					$rejected[ $path ] = 'edit this in the RC Rocket admin';
+					$rejected[ $path ] = 'edit this in the Rhythm Speed Optimizer admin';
 					continue 2;
 				}
 			}

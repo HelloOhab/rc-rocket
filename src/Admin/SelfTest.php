@@ -111,7 +111,7 @@ final class SelfTest {
 				'Kinsta purge connection',
 				$report['purge_api'] ? self::PASS : self::FAIL,
 				$report['purge_api']
-					? 'Divi Theme Options, Theme Builder templates and RC Rocket settings clear the Kinsta cache automatically.'
+					? 'Divi Theme Options, Theme Builder templates and Rhythm Speed Optimizer settings clear the Kinsta cache automatically.'
 					: 'The Kinsta MU plugin was not found, so global changes cannot clear the Kinsta cache.',
 				$report['purge_api'] ? '' : 'Clear the cache from MyKinsta after design changes, and ask Kinsta support to check the MU plugin.'
 			);
@@ -189,7 +189,7 @@ final class SelfTest {
 				'divi',
 				'Divi',
 				self::WARN,
-				'Not detected. RC Rocket still works, but every Divi-specific feature is inert.'
+				'Not detected. Rhythm Speed Optimizer still works, but every Divi-specific feature is inert.'
 			);
 		} else {
 			$checks[] = $this->check(
@@ -246,7 +246,7 @@ final class SelfTest {
 			$reasons = [
 				'wp-config' => 'The RC_ROCKET_SAFE_MODE constant is set in wp-config.php.',
 				'setting'   => 'The safe mode toggle is switched on.',
-				'auto'      => 'RC Rocket switched itself off after JavaScript errors.',
+				'auto'      => 'Rhythm Speed Optimizer switched itself off after JavaScript errors.',
 				'url'       => 'This request carried ?rcr_safe=1.',
 			];
 
@@ -312,7 +312,7 @@ final class SelfTest {
 			'Rewriting reaching visitors',
 			$optimized ? self::PASS : self::FAIL,
 			$optimized
-				? 'The home page came back with RC Rocket\'s marker in it.'
+				? 'The home page came back with Rhythm Speed Optimizer\'s marker in it.'
 				: 'The home page came back untouched.',
 			$optimized ? '' : 'Either safe mode is on, or a cached copy predates your last change. Clear the cache and retest.'
 		);
@@ -422,7 +422,7 @@ final class SelfTest {
 
 		if ( null === $tag ) {
 			return $inline
-				? $this->check( 'jquery', 'jQuery loading', self::WARN, sprintf( 'jQuery is not loaded on the home page, but %d inline scripts call it.', count( $inline ) ), 'Something removed jQuery from this page. Check RC Rocket\'s asset rules and Divi\'s performance options.' )
+				? $this->check( 'jquery', 'jQuery loading', self::WARN, sprintf( 'jQuery is not loaded on the home page, but %d inline scripts call it.', count( $inline ) ), 'Something removed jQuery from this page. Check Rhythm Speed Optimizer\'s asset rules and Divi\'s performance options.' )
 				: $this->check( 'jquery', 'jQuery loading', self::PASS, 'The home page does not load jQuery and nothing on it needs it.' );
 		}
 
@@ -437,7 +437,7 @@ final class SelfTest {
 		if ( $deferred ) {
 			// Inline code anywhere runs during parsing, before a deferred jQuery.
 			$early = count( $inline );
-			$who   = $by_wp ? 'by RC Rocket or WordPress\'s script strategy' : 'by Divi ("Defer jQuery And jQuery Migrate") or another plugin';
+			$who   = $by_wp ? 'by Rhythm Speed Optimizer or WordPress\'s script strategy' : 'by Divi ("Defer jQuery And jQuery Migrate") or another plugin';
 
 			if ( 0 === $early ) {
 				return $this->check( 'jquery', 'jQuery loading', self::PASS, sprintf( 'jQuery is deferred %s, and no inline code calls it during loading.', $who ) );
@@ -450,7 +450,7 @@ final class SelfTest {
 				sprintf( 'jQuery is deferred %s, but %d inline scripts call jQuery while the page is still loading. They get a stand-in without .on(), .hasClass() and the rest: "jQuery(...).on is not a function".', $who, $early ),
 				$by_wp
 					? 'Add jquery.min.js to the JavaScript exclusions (JavaScript tab) so it loads normally.'
-					: 'In Divi → Theme Options → Performance, switch off "Defer jQuery And jQuery Migrate". RC Rocket already defers everything that can safely wait.'
+					: 'In Divi → Theme Options → Performance, switch off "Defer jQuery And jQuery Migrate". Rhythm Speed Optimizer already defers everything that can safely wait.'
 			);
 		}
 
@@ -525,7 +525,7 @@ final class SelfTest {
 					'Background video fallback image',
 					self::WARN,
 					'No fallback image found for this video.',
-					'On Divi 4, set a Background Image on the same section as the video — RC Rocket will use it as the poster automatically. On Divi 5, add one on the Media tab.'
+					'On Divi 4, set a Background Image on the same section as the video — Rhythm Speed Optimizer will use it as the poster automatically. On Divi 5, add one on the Media tab.'
 				);
 			}
 
@@ -579,7 +579,7 @@ final class SelfTest {
 				$used['pages'] > 0 ? self::PASS : self::INFO,
 				$used['pages'] > 0
 					? sprintf( '%d pages prepared, %d%% of their CSS removed. %d waiting.', $used['pages'], (int) round( 100 - 100 * $used['after'] / max( 1, $used['before'] ) ), $used['queued'] )
-						. ( $used['service_on'] ? sprintf( ' %d measured by the RC Rocket CSS service.', $used['service'] ) : ' Prepared on this site (no CSS service set up).' )
+						. ( $used['service_on'] ? sprintf( ' %d measured by the Rhythm Speed Optimizer CSS service.', $used['service'] ) : ' Prepared on this site (no CSS service set up).' )
 					: sprintf( 'No pages prepared yet, %d waiting. Pages are prepared in the background after their first visit.', $used['queued'] ),
 				''
 			);
