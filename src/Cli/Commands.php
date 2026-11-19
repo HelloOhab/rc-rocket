@@ -101,7 +101,7 @@ final class Commands {
 	}
 
 	/**
-	 * Shows what RC Rocket sees: cache size, drop-in state, Divi build.
+	 * Shows what Rhythm Speed Optimizer sees: cache size, drop-in state, Divi build.
 	 *
 	 * @when after_wp_load
 	 */

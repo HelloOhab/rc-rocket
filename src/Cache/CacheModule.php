@@ -326,7 +326,7 @@ final class CacheModule implements Module {
 		$bar->add_node(
 			[
 				'id'    => 'rcrocket',
-				'title' => 'RC Rocket',
+				'title' => 'Rhythm Speed Optimizer',
 				'href'  => current_user_can( 'manage_options' ) ? admin_url( 'admin.php?page=' . \RCRocket\Admin\AdminMenu::SLUG ) : false,
 			]
 		);

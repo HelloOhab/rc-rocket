@@ -411,7 +411,7 @@ final class Updater {
 		}
 
 		return (object) [
-			'name'          => 'RC Rocket',
+			'name'          => 'Rhythm Speed Optimizer',
 			'slug'          => $this->slug(),
 			'version'       => $release['version'],
 			'requires'      => $release['requires'],
@@ -443,13 +443,13 @@ final class Updater {
 		$body = $this->fetch( $package, true );
 
 		if ( null === $body ) {
-			return new \WP_Error( 'rc_rocket_download_failed', __( 'Could not download the RC Rocket update.', 'rc-rocket' ) );
+			return new \WP_Error( 'rc_rocket_download_failed', __( 'Could not download the Rhythm Speed Optimizer update.', 'rc-rocket' ) );
 		}
 
 		$temp = wp_tempnam( 'rc-rocket.zip' );
 
 		if ( ! $temp || false === file_put_contents( $temp, $body ) ) { // phpcs:ignore
-			return new \WP_Error( 'rc_rocket_download_failed', __( 'Could not write the RC Rocket update to disk.', 'rc-rocket' ) );
+			return new \WP_Error( 'rc_rocket_download_failed', __( 'Could not write the Rhythm Speed Optimizer update to disk.', 'rc-rocket' ) );
 		}
 
 		return $temp;

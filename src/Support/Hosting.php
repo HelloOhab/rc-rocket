@@ -296,7 +296,7 @@ final class Hosting {
 			'reason'                  => $detected['page_cache']
 				? sprintf(
 					/* translators: %s: host name */
-					__( '%s runs its own server-level page cache, which is faster than any PHP cache and does not allow a second one. RC Rocket has switched its page cache off and now forwards purges to the host instead.', 'rc-rocket' ),
+					__( '%s runs its own server-level page cache, which is faster than any PHP cache and does not allow a second one. Rhythm Speed Optimizer has switched its page cache off and now forwards purges to the host instead.', 'rc-rocket' ),
 					$detected['label']
 				)
 				: '',

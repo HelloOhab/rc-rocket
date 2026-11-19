@@ -1,10 +1,10 @@
-=== RC Rocket ===
+=== Rhythm Speed Optimizer ===
 Contributors: abdul
 Tags: divi, performance, core web vitals, assets, kinsta
 Requires at least: 6.5
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.8
+Stable tag: 0.12.9
 License: GPLv2 or later
 
 Performance tuning built around Divi 4 and Divi 5, including managed hosts that
@@ -14,7 +14,7 @@ run their own page cache.
 
 Most performance plugins are page caches with extras bolted on. On a managed
 host that already caches pages at the server level, that leaves you paying for
-a feature you cannot use. RC Rocket detects the host and becomes the layer that
+a feature you cannot use. Rhythm Speed Optimizer detects the host and becomes the layer that
 is actually missing: asset control, media delivery, JavaScript timing, and a
 safety net.
 
@@ -31,7 +31,7 @@ Apache and Cloudflare rules for serving cached pages without starting PHP.
 = Divi aware =
 
 * Divi 4 and Divi 5 are detected and handled differently. Divi 5 generates its
-  own critical CSS, so RC Rocket does not duplicate that work.
+  own critical CSS, so Rhythm Speed Optimizer does not duplicate that work.
 * Theme Builder templates are tracked, so editing a global header invalidates
   exactly the pages that render it.
 * Divi's asset cache is invalidated through Divi's own API, never by deleting
@@ -42,7 +42,7 @@ Apache and Cloudflare rules for serving cached pages without starting PHP.
 * Inline scripts are never delayed on Divi 4, because its modules bootstrap
   inline against jQuery.
 * Divi hero backgrounds live in CSS, invisible to plugins that only read image
-  tags. RC Rocket measures each page's real hero in visitors' browsers
+  tags. Rhythm Speed Optimizer measures each page's real hero in visitors' browsers
   (separately for phones and computers) and preloads it, whether it is an
   image or a section background. You can also name them yourself.
 * Section, row and module background images below the first three sections
@@ -74,7 +74,7 @@ Divi are locked unless you force them.
 
 = Per-page options =
 
-An RC Rocket box in the editor sidebar of every page, post and project:
+An Rhythm Speed Optimizer box in the editor sidebar of every page, post and project:
 never cache this page, and switch any optimization off for that page only —
 lazy loading of images, iframes and Divi backgrounds, video handling, defer, delay, lazy render, local fonts, Divi
 library unloading, asset rules and link preloading. Options switched off
@@ -86,14 +86,14 @@ choices.
 * Safe mode via a toggle, a `?rcr_safe=1` URL, or a wp-config constant.
 * Every settings change is recorded with a readable diff and one-click rollback.
 * A beacon reports JavaScript errors from real visitors. If several distinct
-  errors are each seen by more than one visitor, RC Rocket disables itself
+  errors are each seen by more than one visitor, Rhythm Speed Optimizer disables itself
   for two hours, clears every cache, and emails you.
 * A rewrite that throws, or that loses half the document, is discarded and the
   original markup is served.
 
 = AI assistants (MCP) =
 
-On WordPress 6.9 and newer, RC Rocket registers its abilities with the
+On WordPress 6.9 and newer, Rhythm Speed Optimizer registers its abilities with the
 WordPress Abilities API: get the status, run the system check, read
 front-end errors, read and change settings, apply a preset, clear the
 whole cache, a URL or a post, set a page's options, switch safe mode,
@@ -108,6 +108,9 @@ database cleanup is marked destructive, so clients ask before running it.
 Switch it off under Safety.
 
 == Changelog ==
+
+= 0.12.9 =
+* Renamed: the plugin is now called Rhythm Speed Optimizer in WordPress (plugin list, admin menu, editor box, notices, update screen). Folder, settings, update channel and wp-config constants are unchanged, so nothing needs reconfiguring.
 
 = 0.12.8 =
 * New: Remove unused CSS (Assets tab; part of the Fastest level, off

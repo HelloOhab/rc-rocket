@@ -41,7 +41,7 @@ final class PageOptionsBox {
 		$types = (array) apply_filters( 'rc-rocket/page_options/post_types', $types );
 
 		foreach ( $types as $type ) {
-			add_meta_box( 'rcrocket-page-options', __( 'RC Rocket', 'rc-rocket' ), [ $this, 'render' ], $type, 'side', 'default' );
+			add_meta_box( 'rcrocket-page-options', __( 'Rhythm Speed Optimizer', 'rc-rocket' ), [ $this, 'render' ], $type, 'side', 'default' );
 		}
 	}
 
@@ -76,7 +76,7 @@ final class PageOptionsBox {
 			printf(
 				'<label style="display:block;margin:0 0 4px%s"%s><input type="checkbox" name="rcrocket_on[]" value="%s"%s%s> %s</label>',
 				$available ? '' : ';opacity:.55',
-				$available ? '' : ' title="' . esc_attr__( 'Switched off in the RC Rocket settings for the whole site.', 'rc-rocket' ) . '"',
+				$available ? '' : ' title="' . esc_attr__( 'Switched off in the Rhythm Speed Optimizer settings for the whole site.', 'rc-rocket' ) . '"',
 				esc_attr( $key ),
 				checked( $active, true, false ),
 				disabled( ! $available, true, false ),
@@ -92,7 +92,7 @@ final class PageOptionsBox {
 
 		printf(
 			'<p class="description">%s</p>',
-			esc_html__( 'Untick anything that misbehaves on this page only. Greyed-out options are switched off for the whole site in RC Rocket.', 'rc-rocket' )
+			esc_html__( 'Untick anything that misbehaves on this page only. Greyed-out options are switched off for the whole site in Rhythm Speed Optimizer.', 'rc-rocket' )
 		);
 	}
 

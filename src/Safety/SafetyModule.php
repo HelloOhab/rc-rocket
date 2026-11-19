@@ -465,9 +465,9 @@ HTML;
 
 		wp_mail(
 			(string) get_option( 'admin_email' ),
-			sprintf( '[%s] RC Rocket switched itself off', (string) get_bloginfo( 'name' ) ),
+			sprintf( '[%s] Rhythm Speed Optimizer switched itself off', (string) get_bloginfo( 'name' ) ),
 			sprintf(
-				"RC Rocket detected %d JavaScript errors from real visitors in 15 minutes and disabled its optimizations for two hours.\n\nMost recent error:\n%s\n%s\nOn: %s\n\nReview: %s",
+				"Rhythm Speed Optimizer detected %d JavaScript errors from real visitors in 15 minutes and disabled its optimizations for two hours.\n\nMost recent error:\n%s\n%s\nOn: %s\n\nReview: %s",
 				$count,
 				$entry['message'],
 				$entry['source'],
@@ -488,12 +488,12 @@ HTML;
 		$reasons = [
 			'wp-config' => __( 'Safe mode is on via wp-config.php. Remove the RC_ROCKET_SAFE_MODE constant to resume.', 'rc-rocket' ),
 			'url'       => __( 'Safe mode is on for this request only, because of ?rcr_safe=1 in the URL.', 'rc-rocket' ),
-			'setting'   => __( 'Safe mode is on. RC Rocket is not changing any page output.', 'rc-rocket' ),
-			'auto'      => __( 'RC Rocket switched itself off after JavaScript errors from real visitors. Check the Safety tab.', 'rc-rocket' ),
+			'setting'   => __( 'Safe mode is on. Rhythm Speed Optimizer is not changing any page output.', 'rc-rocket' ),
+			'auto'      => __( 'Rhythm Speed Optimizer switched itself off after JavaScript errors from real visitors. Check the Safety tab.', 'rc-rocket' ),
 		];
 
 		printf(
-			'<div class="notice notice-warning"><p><strong>RC Rocket:</strong> %s</p></div>',
+			'<div class="notice notice-warning"><p><strong>Rhythm Speed Optimizer:</strong> %s</p></div>',
 			esc_html( $reasons[ $safe->reason() ] ?? $reasons['setting'] )
 		);
 	}

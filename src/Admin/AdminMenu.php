@@ -22,8 +22,8 @@ final class AdminMenu {
 
 	public function register_page(): void {
 		$hook = add_menu_page(
-			__( 'RC Rocket', 'rc-rocket' ),
-			__( 'RC Rocket', 'rc-rocket' ),
+			__( 'Rhythm Speed Optimizer', 'rc-rocket' ),
+			__( 'Rhythm Speed Optimizer', 'rc-rocket' ),
 			'manage_options',
 			self::SLUG,
 			[ $this, 'render' ],
@@ -100,7 +100,7 @@ final class AdminMenu {
 	public function render(): void {
 		if ( ! file_exists( RCROCKET_DIR . 'assets/admin/app.js' ) ) {
 			printf(
-				'<div class="wrap"><h1>RC Rocket</h1><div class="notice notice-error"><p>%s</p></div></div>',
+				'<div class="wrap"><h1>Rhythm Speed Optimizer</h1><div class="notice notice-error"><p>%s</p></div></div>',
 				esc_html__( 'The admin interface files are missing. Reinstall the plugin from its release zip.', 'rc-rocket' )
 			);
 

@@ -164,7 +164,7 @@ final class DiviSettings {
 			$findings[] = [
 				'severity' => 'info',
 				'label'    => 'Emoji removal is set in both places',
-				'detail'   => 'Divi already removes the emoji script. RC Rocket\'s toggle changes nothing here — leave either one on.',
+				'detail'   => 'Divi already removes the emoji script. Rhythm Speed Optimizer\'s toggle changes nothing here — leave either one on.',
 			];
 		}
 
@@ -172,7 +172,7 @@ final class DiviSettings {
 			$findings[] = [
 				'severity' => 'warn',
 				'label'    => 'Two systems unloading the same libraries',
-				'detail'   => 'Divi\'s Dynamic JavaScript Libraries already loads only what a page\'s modules need. RC Rocket\'s unloader is doing the same job with less information. Switch ours off.',
+				'detail'   => 'Divi\'s Dynamic JavaScript Libraries already loads only what a page\'s modules need. Rhythm Speed Optimizer\'s unloader is doing the same job with less information. Switch ours off.',
 			];
 		}
 
@@ -180,7 +180,7 @@ final class DiviSettings {
 			$findings[] = [
 				'severity' => 'warn',
 				'label'    => 'Third-party deferral set in both places',
-				'detail'   => 'Divi and RC Rocket are both adding defer. Pick one owner — ours gives you an exclusion list, Divi\'s does not.',
+				'detail'   => 'Divi and Rhythm Speed Optimizer are both adding defer. Pick one owner — ours gives you an exclusion list, Divi\'s does not.',
 			];
 		}
 
@@ -190,7 +190,7 @@ final class DiviSettings {
 			$findings[] = [
 				'severity' => 'warn',
 				'label'    => 'Google Fonts handled twice',
-				'detail'   => 'RC Rocket stops Divi requesting Google Fonts and serves local copies instead. Divi\'s own font option is then doing nothing. Turn Divi\'s off, or turn ours off.',
+				'detail'   => 'Rhythm Speed Optimizer stops Divi requesting Google Fonts and serves local copies instead. Divi\'s own font option is then doing nothing. Turn Divi\'s off, or turn ours off.',
 			];
 		}
 
@@ -198,7 +198,7 @@ final class DiviSettings {
 			$findings[] = [
 				'severity' => 'warn',
 				'label'    => 'Google Fonts are unoptimized',
-				'detail'   => 'Divi\'s Improve Google Fonts Loading is off and RC Rocket is not localizing them either, so fonts are render-blocking with no font-display. Turn on one of the two.',
+				'detail'   => 'Divi\'s Improve Google Fonts Loading is off and Rhythm Speed Optimizer is not localizing them either, so fonts are render-blocking with no font-display. Turn on one of the two.',
 			];
 		}
 
